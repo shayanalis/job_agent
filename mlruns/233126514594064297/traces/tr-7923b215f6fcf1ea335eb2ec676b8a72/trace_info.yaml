@@ -1,0 +1,12 @@
+execution_duration_ms: 461614
+request_preview: '{"job_url": "https://careers.t-mobile.com/digital-product-manager-commerce/job/489E5F81C57507BC69607931D1155B56",
+  "company": "unknown", "job_title": "unknown"}'
+request_time: '2025-10-09T08:13:02.566Z'
+response_preview: '{"status": "completed", "bullets_count": 24, "validation_score":
+  71.0}'
+state: OK
+trace_id: tr-7923b215f6fcf1ea335eb2ec676b8a72
+trace_location:
+  mlflow_experiment:
+    experiment_id: '233126514594064297'
+  type: MLFLOW_EXPERIMENT

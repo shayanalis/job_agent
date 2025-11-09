@@ -1,0 +1,34 @@
+execution_duration_ms: 1655
+request_preview: '[[{"content": "You are an expert resume writer specializing in ATS
+  optimization.\n\n        Rewrite resume bullets to:\n        - Incorporate relevant
+  keywords naturally\n        - Maintain quantifiable metrics\n        - Use strong
+  action verbs\n        - Match the seniority level and tone\n        - Stay truthful
+  to the original accomplishment\n\n        Format: Action verb + specific task +
+  quantifiable outcome", "additional_kwargs": {}, "response_metadata": {}, "type":
+  "system", "name": null, "id": null}, {"content": "Rewrite this resume bullet to
+  align with the job requirements.\n\nOriginal Bullet:\nImplemented 3D computer vision
+  models in PyTorch for geometry from monocular images, reducing prediction error
+  by 8%. Evaluated technical tradeoffs between model complexity, and inference latency
+  to optimize deployment.\n\nTarget Job: Product Manager II, Applied AI at Uber\nRole
+  Level: Mid\n\nKey Requirements:\n- Required Skills: AI/ML product management, analytical
+  and problem-solv...'
+request_time: '2025-10-06T04:19:08.236Z'
+response_preview: '{"generations": [[{"text": "Led cross-functional collaboration
+  to implement 3D computer vision models in PyTorch, reducing prediction error by
+  8% and aligning AI capabilities with merchant operations, enhancing data-driven
+  decision-making.", "generation_info": {"finish_reason": "stop", "logprobs": null},
+  "type": "ChatGeneration", "message": {"content": "Led cross-functional collaboration
+  to implement 3D computer vision models in PyTorch, reducing prediction error by
+  8% and aligning AI capabilities with merchant operations, enhancing data-driven
+  decision-making.", "additional_kwargs": {"refusal": null}, "response_metadata":
+  {"token_usage": {"completion_tokens": 37, "prompt_tokens": 317, "total_tokens":
+  354, "completion_tokens_details": {"accepted_prediction_tokens": 0, "audio_tokens":
+  0, "reasoning_tokens": 0, "rejected_prediction_tokens": 0}, "prompt_tokens_details":
+  {"audio_tokens": 0, "cached_tokens": 0}}, "model_name": "gpt-4o-2024-08-06", "system_fingerprint":
+  "fp_f33640a400", "...'
+state: OK
+trace_id: tr-deef87b3aedc2063f4c9b5eb35c5a02b
+trace_location:
+  mlflow_experiment:
+    experiment_id: '0'
+  type: MLFLOW_EXPERIMENT

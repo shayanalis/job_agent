@@ -1,0 +1,12 @@
+execution_duration_ms: 328148
+request_preview: '{"job_url": "https://careers.sig.com/job/9416/Machine-Learning-Systems-Engineer-Data?utm_campaign=google_jobs_apply&utm_source=google_jobs_apply&utm_medium=organic",
+  "company": "unknown", "job_title": "unknown"}'
+request_time: '2025-10-09T21:21:16.434Z'
+response_preview: '{"status": "completed", "bullets_count": 20, "validation_score":
+  71.0}'
+state: OK
+trace_id: tr-722326f4e8ed03155a700b44e3970487
+trace_location:
+  mlflow_experiment:
+    experiment_id: '233126514594064297'
+  type: MLFLOW_EXPERIMENT

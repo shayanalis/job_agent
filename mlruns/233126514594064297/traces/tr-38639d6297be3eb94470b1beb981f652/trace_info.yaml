@@ -1,0 +1,12 @@
+execution_duration_ms: 1381070
+request_preview: '{"job_url": "https://jobs.apple.com/en-us/details/200624825-2926/software-engineer-iwork-team",
+  "company": "unknown", "job_title": "unknown"}'
+request_time: '2025-10-08T02:56:32.094Z'
+response_preview: '{"status": "completed", "bullets_count": 23, "validation_score":
+  18.0}'
+state: OK
+trace_id: tr-38639d6297be3eb94470b1beb981f652
+trace_location:
+  mlflow_experiment:
+    experiment_id: '233126514594064297'
+  type: MLFLOW_EXPERIMENT

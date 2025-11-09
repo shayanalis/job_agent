@@ -1,0 +1,12 @@
+execution_duration_ms: 473563
+request_preview: '{"job_url": "https://careers.t-mobile.com/engineer-enterprise-ai/job/14170AE289C541DF90A4E4482147BFEA",
+  "company": "unknown", "job_title": "unknown"}'
+request_time: '2025-10-09T08:13:42.840Z'
+response_preview: '{"status": "completed", "bullets_count": 25, "validation_score":
+  61.0}'
+state: OK
+trace_id: tr-76fdea5e8198b3369642f67b22f3253d
+trace_location:
+  mlflow_experiment:
+    experiment_id: '233126514594064297'
+  type: MLFLOW_EXPERIMENT

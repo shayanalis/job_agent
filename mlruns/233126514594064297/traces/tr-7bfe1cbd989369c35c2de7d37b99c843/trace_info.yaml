@@ -1,0 +1,12 @@
+execution_duration_ms: 1116729
+request_preview: '{"job_url": "https://careers.t-mobile.com/data-analyst-data-collection-and-automation/job/B0D64367E766BB2684EC9BB2303348B6",
+  "company": "unknown", "job_title": "unknown"}'
+request_time: '2025-10-09T08:13:20.126Z'
+response_preview: '{"status": "completed", "bullets_count": 24, "validation_score":
+  62.0}'
+state: OK
+trace_id: tr-7bfe1cbd989369c35c2de7d37b99c843
+trace_location:
+  mlflow_experiment:
+    experiment_id: '233126514594064297'
+  type: MLFLOW_EXPERIMENT

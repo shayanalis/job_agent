@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Job Description Extractor</title>
+  <style>
+    body {
+      width: 400px;
+      padding: 20px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    }
+    h1 {
+      font-size: 18px;
+      margin-bottom: 15px;
+      color: #2563eb;
+    }
+    button {
+      width: 100%;
+      padding: 12px;
+      font-size: 16px;
+      background: #2563eb;
+      color: white;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      margin-bottom: 10px;
+    }
+    button:hover {
+      background: #1d4ed8;
+    }
+    button:disabled {
+      background: #9ca3af;
+      cursor: not-allowed;
+    }
+    .status {
+      margin-top: 15px;
+      padding: 10px;
+      border-radius: 6px;
+      font-size: 14px;
+      display: none;
+    }
+    .success {
+      background: #d4edda;
+      color: #155724;
+      border: 1px solid #c3e6cb;
+    }
+    .error {
+      background: #f8d7da;
+      color: #721c24;
+      border: 1px solid #f5c6cb;
+    }
+    .info-status {
+      background: #d1ecf1;
+      color: #0c5460;
+      border: 1px solid #bee5eb;
+    }
+    .preview {
+      margin-top: 15px;
+      padding: 15px;
+      background: #f8f9fa;
+      border: 1px solid #dee2e6;
+      border-radius: 6px;
+      display: none;
+    }
+    .preview-label {
+      font-weight: bold;
+      color: #495057;
+      margin-bottom: 5px;
+      font-size: 13px;
+    }
+    .preview-content {
+      color: #212529;
+      font-size: 14px;
+      margin-bottom: 10px;
+      word-break: break-all;
+      line-height: 1.4;
+    }
+    .preview-text {
+      font-style: italic;
+      color: #6c757d;
+    }
+    .info {
+      font-size: 13px;
+      color: #666;
+      margin-top: 10px;
+    }
+    .button-group {
+      display: flex;
+      gap: 10px;
+    }
+    .loading {
+      display: inline-block;
+      width: 14px;
+      height: 14px;
+      border: 2px solid #f3f3f3;
+      border-top: 2px solid #2563eb;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+      margin-right: 8px;
+      vertical-align: middle;
+    }
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+  </style>
+</head>
+<body>
+  <h1>Job Description Extractor</h1>
+  
+  <button id="processBtn">Extract & Send to Server</button>
+  
+  <div id="status" class="status"></div>
+  
+  <p class="info">Select job description text on the page, then click the button to send it to your server.</p>
+  
+  <script src="popup.js"></script>
+</body>
+</html>

@@ -1,0 +1,11 @@
+execution_duration_ms: 171
+request_preview: '{"job_url": "https://www.comeet.com/jobs/yinzcam/2A.008/senior-web-applications-developer-typescripthtmlcss/30.35D",
+  "company": "unknown", "job_title": "unknown"}'
+request_time: '2025-11-08T22:51:20.009Z'
+response_preview: '{"status": "failed", "bullets_count": 0, "validation_score": 0}'
+state: OK
+trace_id: tr-5ef91c429a3661303188524d2bfb2cc1
+trace_location:
+  mlflow_experiment:
+    experiment_id: '233126514594064297'
+  type: MLFLOW_EXPERIMENT

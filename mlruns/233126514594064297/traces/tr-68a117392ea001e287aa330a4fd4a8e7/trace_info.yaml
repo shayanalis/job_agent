@@ -1,0 +1,12 @@
+execution_duration_ms: 294881
+request_preview: '{"job_url": "https://www.google.com/search?sca_esv=eaafb38f645fc732&sxsrf=AE3TifMnGJ5esF7eiqJNj8VyxjeQztzZzA:1760043964780&udm=8&fbs=AIIjpHxU7SXXniUZfeShr2fp4giZWor74456Qtnbyz0ckOXhlYsU7ibbOyyANnKn_8GEDZT-ZSojoLFn5kFJkO-AkjkXaHuWvDVdHHgPUfP6WofIiSGsLRWHVZZO_O_NjP5lJrtnj9TgWlnYxve5kZ-bjKm1O4mLlxL9xn2tUc4cp3owtajFeGyIGGyS8sB7OgBmC0CFFMEDok_fux_ZdEzuPOrMxMFxHQ&q=Machine+learning+engineer+jobs+posted+yesterday&sa=X&ved=2ahUKEwi69LzagpiQAxU6FlkFHZ-SGyQQs6gLegQIFRAB&biw=1335&bih=893&dpr=2&jbr=sep:0#vhid=vt%3D20/docid%3DkhYUoMJdCnACReXGAAAAAA%3D%3D&vssid=jobs-detail-viewer",
+  "company": "unknown", "job_title": "unknown"}'
+request_time: '2025-10-09T21:15:57.011Z'
+response_preview: '{"status": "completed", "bullets_count": 22, "validation_score":
+  71.0}'
+state: OK
+trace_id: tr-68a117392ea001e287aa330a4fd4a8e7
+trace_location:
+  mlflow_experiment:
+    experiment_id: '233126514594064297'
+  type: MLFLOW_EXPERIMENT

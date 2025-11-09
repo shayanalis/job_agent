@@ -1,0 +1,12 @@
+execution_duration_ms: 626084
+request_preview: '{"job_url": "https://vacancies.essex.ac.uk/tlive_webrecruitment/wrd/run/ETREC179GF.open?WVID=9918109NEm",
+  "company": "unknown", "job_title": "unknown"}'
+request_time: '2025-10-09T06:54:18.814Z'
+response_preview: '{"status": "completed", "bullets_count": 26, "validation_score":
+  61.0}'
+state: OK
+trace_id: tr-52762a29cc5fcce16a07676381478190
+trace_location:
+  mlflow_experiment:
+    experiment_id: '233126514594064297'
+  type: MLFLOW_EXPERIMENT

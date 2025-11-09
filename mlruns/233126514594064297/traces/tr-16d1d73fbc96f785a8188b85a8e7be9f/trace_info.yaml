@@ -1,0 +1,12 @@
+execution_duration_ms: 145947
+request_preview: '{"job_url": "https://jobs.lever.co/aledade/2f0e9e4d-a943-4b95-baa3-47bb98f2d5fd",
+  "company": "unknown", "job_title": "unknown"}'
+request_time: '2025-10-07T05:23:53.286Z'
+response_preview: '{"status": "completed", "bullets_count": 25, "validation_score":
+  75.0}'
+state: OK
+trace_id: tr-16d1d73fbc96f785a8188b85a8e7be9f
+trace_location:
+  mlflow_experiment:
+    experiment_id: '233126514594064297'
+  type: MLFLOW_EXPERIMENT

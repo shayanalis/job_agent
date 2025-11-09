@@ -1,0 +1,14 @@
+artifact_uri: file:///Users/shayan/Documents/Job_Assistant/mlruns/233126514594064297/b8a179f390fd482690509e0a1b615f83/artifacts
+end_time: 1759794983352
+entry_point_name: ''
+experiment_id: '233126514594064297'
+lifecycle_stage: active
+run_id: b8a179f390fd482690509e0a1b615f83
+run_name: resume_unknown
+source_name: ''
+source_type: 4
+source_version: ''
+start_time: 1759794980220
+status: 4
+tags: []
+user_id: shayan

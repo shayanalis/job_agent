@@ -1,0 +1,12 @@
+execution_duration_ms: 248639
+request_preview: '{"job_url": "https://jobs.apple.com/en-us/details/200614064-2926/aiml-research-scientist-mind-perception-and-interaction?team=MLAI",
+  "company": "unknown", "job_title": "unknown"}'
+request_time: '2025-11-09T01:35:39.262Z'
+response_preview: '{"status": "completed", "bullets_count": 34, "validation_score":
+  67.0}'
+state: OK
+trace_id: tr-4d267900b961222b7d5db6f391c7d39e
+trace_location:
+  mlflow_experiment:
+    experiment_id: '233126514594064297'
+  type: MLFLOW_EXPERIMENT

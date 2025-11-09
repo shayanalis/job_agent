@@ -1,0 +1,12 @@
+execution_duration_ms: 543952
+request_preview: '{"job_url": "https://careersearch.stanford.edu/jobs/ml-data-engineer-%E2%80%93-healthcare-data-curation-cleaning-1-year-fixed-term-28491",
+  "company": "unknown", "job_title": "unknown"}'
+request_time: '2025-11-09T01:54:15.166Z'
+response_preview: '{"status": "completed", "bullets_count": 28, "validation_score":
+  67.0}'
+state: OK
+trace_id: tr-de3d3329cacf7aea5053cba910f43b41
+trace_location:
+  mlflow_experiment:
+    experiment_id: '233126514594064297'
+  type: MLFLOW_EXPERIMENT

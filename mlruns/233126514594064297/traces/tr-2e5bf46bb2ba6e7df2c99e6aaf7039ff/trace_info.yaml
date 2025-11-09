@@ -1,0 +1,12 @@
+execution_duration_ms: 153171
+request_preview: '{"job_url": "https://ats.rippling.com/en-GB/blitzy-jobs/jobs/68f2cb2f-8733-451f-a8ba-f9f084f2d659",
+  "company": "unknown", "job_title": "unknown"}'
+request_time: '2025-10-07T03:47:49.341Z'
+response_preview: '{"status": "completed", "bullets_count": 18, "validation_score":
+  69.0}'
+state: OK
+trace_id: tr-2e5bf46bb2ba6e7df2c99e6aaf7039ff
+trace_location:
+  mlflow_experiment:
+    experiment_id: '233126514594064297'
+  type: MLFLOW_EXPERIMENT

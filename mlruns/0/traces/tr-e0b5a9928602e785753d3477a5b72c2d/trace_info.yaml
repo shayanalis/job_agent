@@ -1,0 +1,34 @@
+execution_duration_ms: 26328
+request_preview: '{"job_description": "Product Manager II, Applied AI\nProduct Management,
+  Product\nSan Francisco, California   |   Sunnyvale, California\nApply Now\nAbout
+  the Role\n\nUber Eats is transforming the way local businesses operate, grow, and
+  connect with their customers. Merchants are at the heart of our ecosystem, and we
+  are building the next generation of AI-powered capabilities and solutions to help
+  them seamlessly run and scale their businesses.\n\nAs a Product Manager on the Applied
+  AI team, you will be responsible for shaping and delivering AI-driven products that
+  empower merchants with insights, recommendations, automation, and support. You will
+  partner closely with engineering, data science, design, and operations teams to
+  ensure we’re applying cutting-edge AI technologies in practical ways that solve
+  real merchant problems. This is a highly cross-functional role where you will drive
+  both strategy and execution, bringing together user needs, technical capabilities,
+  and business go...'
+request_time: '2025-10-06T04:18:55.819Z'
+response_preview: '{"job_description": "Product Manager II, Applied AI\nProduct Management,
+  Product\nSan Francisco, California   |   Sunnyvale, California\nApply Now\nAbout
+  the Role\n\nUber Eats is transforming the way local businesses operate, grow, and
+  connect with their customers. Merchants are at the heart of our ecosystem, and we
+  are building the next generation of AI-powered capabilities and solutions to help
+  them seamlessly run and scale their businesses.\n\nAs a Product Manager on the Applied
+  AI team, you will be responsible for shaping and delivering AI-driven products that
+  empower merchants with insights, recommendations, automation, and support. You will
+  partner closely with engineering, data science, design, and operations teams to
+  ensure we’re applying cutting-edge AI technologies in practical ways that solve
+  real merchant problems. This is a highly cross-functional role where you will drive
+  both strategy and execution, bringing together user needs, technical capabilities,
+  and business go...'
+state: OK
+trace_id: tr-e0b5a9928602e785753d3477a5b72c2d
+trace_location:
+  mlflow_experiment:
+    experiment_id: '0'
+  type: MLFLOW_EXPERIMENT

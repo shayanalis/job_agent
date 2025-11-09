@@ -1,0 +1,12 @@
+execution_duration_ms: 764314
+request_preview: '{"job_url": "https://www.uber.com/global/en/careers/list/148936/",
+  "company": "unknown", "job_title": "unknown"}'
+request_time: '2025-10-07T00:31:20.245Z'
+response_preview: '{"status": "completed", "bullets_count": 11, "validation_score":
+  15.0}'
+state: OK
+trace_id: tr-4fdf0b41fe957e1286edacff2a510951
+trace_location:
+  mlflow_experiment:
+    experiment_id: '233126514594064297'
+  type: MLFLOW_EXPERIMENT

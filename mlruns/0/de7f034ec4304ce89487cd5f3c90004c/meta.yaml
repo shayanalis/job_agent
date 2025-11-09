@@ -1,0 +1,14 @@
+artifact_uri: mlflow-artifacts:/0/de7f034ec4304ce89487cd5f3c90004c/artifacts
+end_time: 1759724362163
+entry_point_name: ''
+experiment_id: '0'
+lifecycle_stage: active
+run_id: de7f034ec4304ce89487cd5f3c90004c
+run_name: capricious-horse-278
+source_name: ''
+source_type: 4
+source_version: ''
+start_time: 1759724335790
+status: 3
+tags: []
+user_id: shayan
