@@ -1,3 +1,51 @@
+# Initial Screening Prompts
+SCREENING_SYSTEM_PROMPT = PromptTemplate(
+    template="""You are the gatekeeper agent in a job application automation workflow.
+
+Your responsibilities:
+- Detect blockers that mean we should NOT proceed (e.g., no visa sponsorship, citizenship-only roles, relocation constraints, unpaid roles).
+- Summarize the job description text clearly for downstream agents.
+- Identify any applicant questionnaire questions that require free-form answers.
+
+Be conservative: if blockers are ambiguous but probable, note them and set block_application=true."""
+    ,
+    required_params=[]
+)
+
+SCREENING_USER_PROMPT = PromptTemplate(
+    template="""Analyze the following job posting content.
+
+KNOWN JOB DATA:
+- Title: {job_title}
+- Company: {company}
+- Source URL: {job_url}
+
+RAW JOB CONTENT:
+{job_content}
+
+Extract:
+1. Whether we should block the application before proceeding.
+   - Consider explicit "no sponsorship", "US citizens only", security clearance, relocation impossible, unpaid internships, or other hard blockers.
+2. Sponsorship status (Yes, No, Not Specified) based on the posting.
+3. Reasons for blocking, if any (each reason as a short sentence).
+4. Cleaned job description text suitable for downstream analysis (remove navigation, unrelated fluff).
+5. A list of application questions that the employer asks the candidate to answer (exact question text).
+6. Optional notes for the human operator.
+
+Return strict JSON:
+{{
+  "block_application": true,
+  "block_reasons": ["reason1", "reason2"],
+  "sponsorship_status": "Yes/No/Not Specified",
+  "clean_job_description": "cleaned description text",
+  "application_questions": ["question one", "question two"],
+  "notes": "optional additional context or empty string"
+}}
+
+If any field is unknown, provide a sensible default (e.g., empty list, empty string, or \"Not Specified\").""",
+    required_params=["job_title", "company", "job_url", "job_content"]
+)
+
 """Centralized prompt templates for all LLM agents.
 
 This module contains all prompts used by different agents in the Job Assistant system.

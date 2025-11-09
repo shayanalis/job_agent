@@ -1,12 +1,35 @@
 """Resume Writer agent - rewrites bullets to align with JD."""
 
 import logging
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 from src.agents.state import AgentState, AnalyzedRequirements, JobMetadata
 from src.services.llm_service import LLMService
+from src.services.status_service import status_service
 
 logger = logging.getLogger(__name__)
+
+
+def _record_status(
+    state: AgentState,
+    *,
+    status: str,
+    step: str,
+    message: str = "",
+    metadata: Optional[Dict] = None,
+) -> None:
+    status_id = state.get("status_id")
+
+    if not status_id:
+        return
+
+    status_service.update_status(
+        status_id=status_id,
+        status=status,
+        step=step,
+        message=message,
+        metadata=metadata or {},
+    )
 
 
 def write_resume_node(state: AgentState) -> Dict:
@@ -24,6 +47,14 @@ def write_resume_node(state: AgentState) -> Dict:
         Dict with updated state keys
     """
     logger.info("Starting resume writing")
+
+    _record_status(
+        state,
+        status="processing",
+        step="writing_resume",
+        message="Generating tailored resume sections",
+        metadata={"retry_count": state.get("retry_count", 0)},
+    )
 
     try:
         # Parse requirements and metadata
@@ -71,7 +102,18 @@ def write_resume_node(state: AgentState) -> Dict:
         logger.info(f"Resume writing complete: {total_bullets} bullets generated across roles")
         if role_counts:
             logger.info(f"Role breakdown: {', '.join(role_counts)}")
-        
+
+        _record_status(
+            state,
+            status="processing",
+            step="resume_written",
+            message="Resume sections drafted",
+            metadata={
+                "total_bullets": total_bullets,
+                "roles": role_counts,
+            },
+        )
+
         return {
             "resume_sections": resume_sections,
             "status": "written"
@@ -79,6 +121,12 @@ def write_resume_node(state: AgentState) -> Dict:
 
     except Exception as error:
         logger.error(f"Error in resume writing: {error}")
+        _record_status(
+            state,
+            status="failed",
+            step="resume_write_failed",
+            message=str(error),
+        )
         return {
             "error_message": f"Resume writing failed: {str(error)}",
             "status": "failed"

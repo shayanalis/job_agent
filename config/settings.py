@@ -28,6 +28,7 @@ VALIDATION_RETRIES = int(os.getenv("VALIDATION_RETRIES", "2"))
 LLM_TEMPERATURE = float(os.getenv("LLM_TEMPERATURE", "0.0"))
 # LLM Models
 OPENAI_MODEL = "gpt-5"
+SCREENING_MODEL = os.getenv("SCREENING_MODEL", "gpt-5-mini")
 
 # Flask Settings
 FLASK_PORT = int(os.getenv("FLASK_PORT", "8002"))

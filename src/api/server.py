@@ -1,12 +1,14 @@
 """Flask API server for resume generation."""
 
 import logging
+import time
 import mlflow
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 
 from src.graph.workflow import create_workflow
 from config.settings import FLASK_PORT, FLASK_DEBUG, LOG_LEVEL
+from src.services.status_service import status_service
 
 # Configure logging
 logging.basicConfig(
@@ -62,6 +64,9 @@ def generate_resume():
     Returns:
         JSON response with resume URL or error
     """
+    status_id = None
+    status_snapshot = None
+
     try:
         # Validate request
         data = request.get_json()
@@ -86,10 +91,23 @@ def generate_resume():
 
         logger.info(f"Received resume generation request for URL: {job_url}")
 
+        status_snapshot = status_service.create_status(
+            job_url=job_url,
+            status="processing",
+            step="received",
+            message="Request received",
+            metadata={
+                "job_title": job_metadata.get("title"),
+                "company": job_metadata.get("company"),
+            },
+        )
+        status_id = status_snapshot.status_id
+
         # Initialize workflow state
         initial_state = {
             "job_description": job_description,
             "job_metadata": job_metadata,
+            "status_id": status_id,
             "base_resume_pointers": None,
             "analyzed_requirements": None,
             "resume_sections": None,
@@ -141,18 +159,32 @@ def generate_resume():
         # Handle null result
         if result is None:
             logger.error("Workflow returned None - likely an early exit or crash")
+            status_service.update_status(
+                status_id=status_id,
+                status="failed",
+                step="workflow_error",
+                message="Workflow returned no result",
+            )
             return jsonify({
                 "error": "Resume processing failed - workflow returned no result",
-                "status": "failed"
+                "status": "failed",
+                "status_id": status_id,
             }), 500
 
         # Check for errors
         if result.get("status") == "failed":
             error_msg = result.get("error_message", "Unknown error")
             logger.error(f"Workflow failed: {error_msg}")
+            status_service.update_status(
+                status_id=status_id,
+                status="failed",
+                step="workflow_failed",
+                message=error_msg,
+            )
             return jsonify({
                 "error": error_msg,
-                "status": "failed"
+                "status": "failed",
+                "status_id": status_id,
             }), 500
         
         # Check for no sponsorship
@@ -160,9 +192,19 @@ def generate_resume():
             error_msg = result.get("error_message", "This position does not offer H1B visa sponsorship")
             job_metadata = result.get("job_metadata", {})
             logger.warning(f"Workflow ended: No H1B sponsorship for {job_metadata.get('title')} at {job_metadata.get('company')}")
+            status_service.update_status(
+                status_id=status_id,
+                status="no_sponsorship",
+                step="screened_out",
+                message=error_msg,
+                metadata={
+                    "job_metadata": job_metadata,
+                },
+            )
             return jsonify({
                 "error": error_msg,
                 "status": "no_sponsorship",
+                "status_id": status_id,
                 "metadata": {
                     "job_title": job_metadata.get("title"),
                     "company": job_metadata.get("company"),
@@ -175,9 +217,21 @@ def generate_resume():
         validation_result = result.get("validation_result", {})
 
         logger.info(f"Resume generated successfully: {resume_url}")
+        status_service.update_status(
+            status_id=status_id,
+            status="completed",
+            step="uploaded",
+            message="Resume generated successfully",
+            resume_url=resume_url or "",
+            metadata={
+                "job_metadata": result.get("job_metadata", {}),
+                "validation_result": validation_result,
+            },
+        )
 
         return jsonify({
             "status": "success",
+            "status_id": status_id,
             "resume_url": resume_url,
             "metadata": {
                 "job_title": result["job_metadata"].get("title"),
@@ -190,10 +244,63 @@ def generate_resume():
 
     except Exception as error:
         logger.error(f"Error in generate_resume endpoint: {error}", exc_info=True)
+        if status_id:
+            status_service.update_status(
+                status_id=status_id,
+                status="failed",
+                step="exception",
+                message=str(error),
+            )
         return jsonify({
             "error": f"Internal server error: {str(error)}",
-            "status": "failed"
+            "status": "failed",
+            "status_id": status_id,
         }), 500
+
+
+@app.route('/status', methods=['GET'])
+def get_status():
+    """Fetch latest workflow status for a job URL, base URL, or status ID."""
+
+    job_url = request.args.get('job_url')
+    base_url = request.args.get('base_url')
+    status_id = request.args.get('status_id')
+
+    if not any([job_url, base_url, status_id]):
+        return jsonify({
+            "error": "status_id, job_url, or base_url query parameter is required",
+            "status": "failed"
+        }), 400
+
+    snapshot = status_service.get_status(
+        job_url=job_url,
+        base_url=base_url,
+        status_id=status_id,
+    )
+
+    if snapshot:
+        return jsonify({
+            "status": "success",
+            "snapshot": snapshot.to_dict()
+        }), 200
+
+    normalized_job_url = status_service.normalize_job_url(job_url) if job_url else ""
+    normalized_base_url = status_service.normalize_base_url(base_url or job_url or "") if (base_url or job_url) else ""
+
+    return jsonify({
+        "status": "not_found",
+        "snapshot": {
+            "job_url": normalized_job_url,
+            "base_url": normalized_base_url,
+            "status": "not_started",
+            "step": "idle",
+            "message": "",
+            "resume_url": "",
+            "metadata": {},
+            "status_id": status_id or "",
+            "updated_at": time.time(),
+        }
+    }), 200
 
 
 @app.route('/test-drive', methods=['GET'])

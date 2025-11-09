@@ -8,6 +8,7 @@ Production-quality LangGraph agent system for generating tailored resumes from j
 - **Google Drive Integration**: Dynamically loads resume pointers from Google Drive, uploads generated PDFs
 - **LLM-Powered**: Uses GPT-4 for intelligent analysis and content generation
 - **Quality Validation**: Automatic validation with retry logic for optimal results
+- **Realtime Progress Tracking**: Chrome extension polls the `/status` endpoint to surface workflow progress across popup sessions
 - **Chrome Extension Ready**: Flask API designed to work with browser extensions
 
 ## Architecture
@@ -152,6 +153,7 @@ Create markdown files in your Resume Pointers folder:
    - Extract job metadata (title, company, etc.) using AI
    - Generate a tailored resume
    - Upload to Google Drive and return the link
+6. Re-open the popup on the same tab at any time to view the latest workflow status, even if the site navigates to a different host during the application flow.
 
 ### Start the Server
 
@@ -178,6 +180,15 @@ curl http://localhost:8000/test-drive
 curl -X POST http://localhost:8000/test-llm \
   -H "Content-Type: application/json" \
   -d '{"text": "Sample job description"}'
+```
+
+**Check Workflow Status:**
+```bash
+# Lookup by job URL (automatically normalized server-side)
+curl "http://localhost:8000/status?job_url=https://example.com/jobs/12345"
+
+# Or reuse the status_id returned from /generate-resume
+curl "http://localhost:8000/status?status_id=5f2c1e4d1b734f1f87ad2ca3f8cd1234"
 ```
 
 **Generate Resume:**

@@ -1,6 +1,6 @@
 """State definitions for LangGraph agents."""
 
-from typing import TypedDict, List, Optional, Literal
+from typing import TypedDict, List, Optional, Literal, Dict, Any
 from datetime import datetime
 from pydantic import BaseModel, Field
 
@@ -93,12 +93,43 @@ class ValidationResult(BaseModel):
     )
 
 
+class ScreeningResult(BaseModel):
+    """Output from the initial screening agent."""
+
+    block_application: bool = Field(
+        description="True if the job should be skipped before continuing"
+    )
+    block_reasons: List[str] = Field(
+        default_factory=list,
+        description="Reasons why the application should be blocked"
+    )
+    sponsorship_status: Literal["Yes", "No", "Not Specified"] = Field(
+        default="Not Specified",
+        description="Whether the job offers sponsorship according to the posting"
+    )
+    clean_job_description: str = Field(
+        default="",
+        description="Sanitized job description text for downstream processing"
+    )
+    application_questions: List[str] = Field(
+        default_factory=list,
+        description="Free-form questions asked in the application"
+    )
+    notes: str = Field(
+        default="",
+        description="Additional context or warnings for the operator"
+    )
+
+
 class AgentState(TypedDict):
     """Main state object shared across all LangGraph nodes."""
 
     # Input from API
     job_description: str
     job_metadata: dict  # Will be converted to JobMetadata
+
+    # Workflow tracking
+    status_id: str
 
     # Loaded resume data
     base_resume_pointers: Optional[str]  # Raw experience pointers from markdown file to be transformed
@@ -107,6 +138,9 @@ class AgentState(TypedDict):
     analyzed_requirements: Optional[dict]  # AnalyzedRequirements as dict
     resume_sections: Optional[dict]  # Dict containing role bullets + skills
     validation_result: Optional[dict]  # ValidationResult as dict
+    screening_result: Optional[Dict[str, Any]]  # ScreeningResult as dict
+    screened_job_description: Optional[str]  # Clean JD text from screening
+    application_questions: Optional[List[str]]  # Questions to route elsewhere
 
     # Document generation
     generated_doc_path: str
@@ -115,4 +149,4 @@ class AgentState(TypedDict):
     # Workflow control
     retry_count: int
     error_message: str
-    status: str  # "processing", "completed", "failed"
+    status: str  # "processing", "completed", "failed", "screening_blocked", etc.
