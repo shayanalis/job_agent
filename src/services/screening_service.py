@@ -24,8 +24,27 @@ class ScreeningService:
         if not OPENAI_API_KEY:
             raise ValueError("OPENAI_API_KEY not found in environment variables")
 
-        # Prefer deterministic behaviour for screening; fall back to global temperature if needed.
-        temperature = 0.0 if SCREENING_MODEL != "gpt-5" else LLM_TEMPERATURE
+        # Prefer deterministic behaviour for screening, while respecting model constraints.
+        default_temp_models = (
+            "gpt-5",
+            "gpt-5-mini",
+            "gpt-5-preview",
+            "gpt-4.1",
+            "gpt-4.1-mini",
+        )
+
+        requires_default_temp = any(
+            SCREENING_MODEL.startswith(prefix) for prefix in default_temp_models
+        )
+
+        if requires_default_temp:
+            temperature = 1.0
+            logger.info(
+                "Model %s requires default temperature=1.0; overriding deterministic setting",
+                SCREENING_MODEL,
+            )
+        else:
+            temperature = 0.0 if LLM_TEMPERATURE is None else LLM_TEMPERATURE
 
         self.client = ChatOpenAI(
             model=SCREENING_MODEL,

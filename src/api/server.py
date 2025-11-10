@@ -214,7 +214,7 @@ def generate_resume():
 
         # Success response
         resume_url = result.get("resume_url")
-        validation_result = result.get("validation_result", {})
+        validation_result = result.get("validation_result") or {}
 
         logger.info(f"Resume generated successfully: {resume_url}")
         status_service.update_status(
@@ -229,14 +229,25 @@ def generate_resume():
             },
         )
 
+        resume_sections = result.get("resume_sections") or {}
+        bullets_count = 0
+        if isinstance(resume_sections, dict):
+            bullets_count = sum(
+                len(bullets)
+                for role, bullets in resume_sections.items()
+                if role != "skills" and isinstance(bullets, list)
+            )
+
+        job_metadata = result.get("job_metadata") or {}
+
         return jsonify({
             "status": "success",
             "status_id": status_id,
             "resume_url": resume_url,
             "metadata": {
-                "job_title": result["job_metadata"].get("title"),
-                "company": result["job_metadata"].get("company"),
-                "bullets_count": sum(len(bullets) for role, bullets in result.get("resume_sections", {}).items() if role != "skills" and isinstance(bullets, list)),
+                "job_title": job_metadata.get("title"),
+                "company": job_metadata.get("company"),
+                "bullets_count": bullets_count,
                 "keyword_coverage": validation_result.get("keyword_coverage_score", 0),
                 "retry_count": result.get("retry_count", 0)
             }

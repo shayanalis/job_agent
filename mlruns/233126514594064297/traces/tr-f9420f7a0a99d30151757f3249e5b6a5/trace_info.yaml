@@ -1,0 +1,12 @@
+execution_duration_ms: 23738
+request_preview: '{"job_url": "https://bloomfieldrobotics.applytojob.com/apply/85ZPX1DwX0/AI-Engineer",
+  "company": "unknown", "job_title": "unknown"}'
+request_time: '2025-11-10T03:31:56.455Z'
+response_preview: '{"status": "screening_blocked", "bullets_count": 0, "validation_score":
+  0}'
+state: OK
+trace_id: tr-f9420f7a0a99d30151757f3249e5b6a5
+trace_location:
+  mlflow_experiment:
+    experiment_id: '233126514594064297'
+  type: MLFLOW_EXPERIMENT

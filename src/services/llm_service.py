@@ -36,16 +36,41 @@ class LLMService:
         if not OPENAI_API_KEY:
             raise ValueError("OPENAI_API_KEY not found in environment variables")
 
-        # GPT-5 only supports temperature=1.0
-        temperature = 1.0 if OPENAI_MODEL == "gpt-5" else LLM_TEMPERATURE
-        
-        self.openai_model = ChatOpenAI(
-            model=OPENAI_MODEL,
-            temperature=temperature,
-            api_key=OPENAI_API_KEY,
+        # Certain models only support the default temperature of 1.0
+        default_temp_models = (
+            "gpt-5",
+            "gpt-5-preview",
+            "gpt-4.1",
+            "gpt-4.1-mini",
         )
 
-        logger.info(f"LLM Service initialized with {OPENAI_MODEL} (temperature={temperature})")
+        requires_default_temp = any(
+            OPENAI_MODEL.startswith(prefix) for prefix in default_temp_models
+        )
+
+        kwargs = {
+            "model": OPENAI_MODEL,
+            "api_key": OPENAI_API_KEY,
+        }
+
+        if requires_default_temp:
+            if LLM_TEMPERATURE not in (None, 1, 1.0):
+                logger.warning(
+                    "Model %s requires default temperature=1.0; overriding configured value %s",
+                    OPENAI_MODEL,
+                    LLM_TEMPERATURE,
+                )
+            kwargs["temperature"] = 1.0
+        elif LLM_TEMPERATURE is not None:
+            kwargs["temperature"] = LLM_TEMPERATURE
+
+        self.openai_model = ChatOpenAI(**kwargs)
+
+        logger.info(
+            "LLM Service initialized with %s (temperature=%s)",
+            OPENAI_MODEL,
+            kwargs.get("temperature", "default"),
+        )
 
     def analyze_job_description(self, job_description: str, job_metadata: Dict) -> AnalyzedRequirements:
         """Analyze job description and extract structured requirements.

@@ -1,0 +1,11 @@
+execution_duration_ms: 2453
+request_preview: '{"job_url": "https://www.fluency.inc/careers", "company": "unknown",
+  "job_title": "unknown"}'
+request_time: '2025-11-10T02:41:32.732Z'
+response_preview: '{"status": "failed", "bullets_count": 0, "validation_score": 0}'
+state: OK
+trace_id: tr-25018d312690e4e48c0e1a1973a74849
+trace_location:
+  mlflow_experiment:
+    experiment_id: '233126514594064297'
+  type: MLFLOW_EXPERIMENT

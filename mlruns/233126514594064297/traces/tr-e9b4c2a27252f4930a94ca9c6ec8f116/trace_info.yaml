@@ -1,0 +1,12 @@
+execution_duration_ms: 338760
+request_preview: '{"job_url": "https://jobs.lever.co/asapp-2/1fdfb7af-0676-49e4-8e2a-085bb74d2c5d",
+  "company": "unknown", "job_title": "unknown"}'
+request_time: '2025-11-10T03:55:28.053Z'
+response_preview: '{"status": "completed", "bullets_count": 27, "validation_score":
+  65.0}'
+state: OK
+trace_id: tr-e9b4c2a27252f4930a94ca9c6ec8f116
+trace_location:
+  mlflow_experiment:
+    experiment_id: '233126514594064297'
+  type: MLFLOW_EXPERIMENT

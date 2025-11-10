@@ -1,3 +1,47 @@
+"""Centralized prompt templates for all LLM agents.
+
+This module contains all prompts used by different agents in the Job Assistant system.
+Prompts are organized by agent type and include both system and user prompts.
+"""
+
+from dataclasses import dataclass
+from typing import Any, Dict, List, Optional
+
+
+@dataclass
+class PromptTemplate:
+    """Base class for prompt templates with parameter validation."""
+
+    template: str
+    required_params: List[str]
+    optional_params: Optional[List[str]] = None
+
+    def __post_init__(self) -> None:
+        if self.optional_params is None:
+            self.optional_params = []
+
+    def format(self, **kwargs: Any) -> str:
+        """Format the template with provided parameters."""
+        missing = set(self.required_params) - set(kwargs.keys())
+        if missing:
+            raise ValueError(f"Missing required parameters: {missing}")
+
+        for param in self.optional_params:
+            if param not in kwargs:
+                kwargs[param] = ""
+
+        try:
+            return self.template.format(**kwargs)
+        except Exception as exc:  # pragma: no cover - logging path
+            import logging
+
+            logger = logging.getLogger(__name__)
+            logger.error("Error formatting template: %s", exc)
+            logger.error("Template preview: %s...", self.template[:200])
+            logger.error("Provided kwargs: %s", list(kwargs.keys()))
+            raise
+
+
 # Initial Screening Prompts
 SCREENING_SYSTEM_PROMPT = PromptTemplate(
     template="""You are the gatekeeper agent in a job application automation workflow.
@@ -7,7 +51,12 @@ Your responsibilities:
 - Summarize the job description text clearly for downstream agents.
 - Identify any applicant questionnaire questions that require free-form answers.
 
-Be conservative: if blockers are ambiguous but probable, note them and set block_application=true."""
+Guidelines:
+- Only set block_application=true when the posting explicitly states a hard blocker.
+- If sponsorship is not mentioned, treat it as safe to proceed (sponsorship_status="Not Specified") and keep block_application=false.
+- If the job requires on-site US work (non-remote) but otherwise has no blockers, do not block; simply note the location expectations.
+- Treat any requirement for an active security clearance (e.g., "Active Security Clearance - Secret") as a hard blocker and set block_application=true.
+- Use notes to highlight uncertainties without stopping the workflow unless the blocker is explicit."""
     ,
     required_params=[]
 )
@@ -25,7 +74,7 @@ RAW JOB CONTENT:
 
 Extract:
 1. Whether we should block the application before proceeding.
-   - Consider explicit "no sponsorship", "US citizens only", security clearance, relocation impossible, unpaid internships, or other hard blockers.
+   - Consider explicit "no sponsorship", "US citizens only", security clearance (e.g., "Active Security Clearance - Secret"), relocation impossible, unpaid internships, or other hard blockers.
 2. Sponsorship status (Yes, No, Not Specified) based on the posting.
 3. Reasons for blocking, if any (each reason as a short sentence).
 4. Cleaned job description text suitable for downstream analysis (remove navigation, unrelated fluff).
@@ -42,65 +91,11 @@ Return strict JSON:
   "notes": "optional additional context or empty string"
 }}
 
-If any field is unknown, provide a sensible default (e.g., empty list, empty string, or \"Not Specified\").""",
+If sponsorship is not mentioned, set block_application=false and sponsorship_status="Not Specified" and capture any uncertainties in notes.
+If the posting requires on-site US work (non-remote) but otherwise has no blockers, keep block_application=false and document the location expectations in notes.
+If any field is unknown, provide a sensible default (e.g., empty list, empty string, or "Not Specified").""",
     required_params=["job_title", "company", "job_url", "job_content"]
 )
-
-"""Centralized prompt templates for all LLM agents.
-
-This module contains all prompts used by different agents in the Job Assistant system.
-Prompts are organized by agent type and include both system and user prompts.
-"""
-
-from typing import Dict, Any, Optional, List
-from dataclasses import dataclass
-
-
-@dataclass
-class PromptTemplate:
-    """Base class for prompt templates with parameter validation."""
-    
-    template: str
-    required_params: List[str]
-    optional_params: List[str] = None
-    
-    def __post_init__(self):
-        if self.optional_params is None:
-            self.optional_params = []
-    
-    def format(self, **kwargs) -> str:
-        """Format the template with provided parameters.
-        
-        Args:
-            **kwargs: Parameters to fill in the template
-            
-        Returns:
-            Formatted prompt string
-            
-        Raises:
-            ValueError: If required parameters are missing
-        """
-        # Check for missing required parameters
-        missing = set(self.required_params) - set(kwargs.keys())
-        if missing:
-            raise ValueError(f"Missing required parameters: {missing}")
-        
-        # Fill in optional parameters with empty strings if not provided
-        for param in self.optional_params:
-            if param not in kwargs:
-                kwargs[param] = ""
-        
-        try:
-            return self.template.format(**kwargs)
-        except Exception as e:
-            # Add more context to formatting errors
-            import logging
-            logger = logging.getLogger(__name__)
-            logger.error(f"Error formatting template: {e}")
-            logger.error(f"Template preview: {self.template[:200]}...")
-            logger.error(f"Provided kwargs: {list(kwargs.keys())}")
-            raise
-
 
 # Job Description Analyzer Prompts
 JD_ANALYZER_SYSTEM_PROMPT = PromptTemplate(
