@@ -1,14 +1,18 @@
 import pytest
 
 from src.services.status_service import StatusService
+from src.services.status_repository import StatusRepository
 
 
 @pytest.fixture
-def status_client():
+def status_client(tmp_path):
     from src.api import server
 
     original_service = server.status_service
-    test_service = StatusService(ttl_seconds=60)
+    db_url = f"sqlite:///{tmp_path/'status_endpoint.db'}"
+    repo = StatusRepository(database_url=db_url)
+    repo.create_schema()
+    test_service = StatusService(ttl_seconds=60, repository=repo)
     server.status_service = test_service
 
     try:

@@ -22,7 +22,7 @@ class StatusSnapshotModel(Base):
     step = Column(String(128), nullable=False)
     message = Column(Text, nullable=False, default="")
     resume_url = Column(Text, nullable=False, default="")
-    metadata = Column(Text, nullable=False, default="{}")
+    metadata_json = Column("metadata", Text, nullable=False, default="{}")
     applied = Column(Boolean, nullable=False, default=False)
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
     updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, index=True)

@@ -40,23 +40,25 @@ def create_sqlalchemy_engine(database_url: str = DATABASE_URL) -> Engine:
     return create_engine(database_url, connect_args=connect_args, **engine_kwargs)
 
 
-_ENGINE: Engine | None = None
-_SESSION_FACTORY: Callable[[], Session] | None = None
+_ENGINES: dict[str, Engine] = {}
+_SESSION_FACTORIES: dict[str, Callable[[], Session]] = {}
 
 
 def get_engine(database_url: str = DATABASE_URL) -> Engine:
-    global _ENGINE
-    if _ENGINE is None:
-        _ENGINE = create_sqlalchemy_engine(database_url)
-    return _ENGINE
+    engine = _ENGINES.get(database_url)
+    if engine is None:
+        engine = create_sqlalchemy_engine(database_url)
+        _ENGINES[database_url] = engine
+    return engine
 
 
 def get_session_factory(database_url: str = DATABASE_URL):
-    global _SESSION_FACTORY
-    if _SESSION_FACTORY is None:
+    factory = _SESSION_FACTORIES.get(database_url)
+    if factory is None:
         engine = get_engine(database_url)
-        _SESSION_FACTORY = scoped_session(
+        factory = scoped_session(
             sessionmaker(bind=engine, autoflush=False, autocommit=False, expire_on_commit=False)
         )
-    return _SESSION_FACTORY
+        _SESSION_FACTORIES[database_url] = factory
+    return factory
 

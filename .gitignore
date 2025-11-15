@@ -36,3 +36,4 @@ Thumbs.db
 generated_resumes/
 *.docx
 *.pdf
+mlruns/**

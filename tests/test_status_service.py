@@ -1,4 +1,15 @@
+import pytest
+
 from src.services.status_service import StatusService
+from src.services.status_repository import StatusRepository
+
+
+@pytest.fixture
+def sqlite_status_service(tmp_path):
+    db_url = f"sqlite:///{tmp_path/'status.db'}"
+    repo = StatusRepository(database_url=db_url)
+    repo.create_schema()
+    return StatusService(repository=repo)
 
 
 def test_normalize_job_and_base_urls():
@@ -12,8 +23,8 @@ def test_normalize_job_and_base_urls():
     assert service.normalize_base_url(job_url) == "https://example.com"
 
 
-def test_create_update_and_lookup_status_by_id_and_url():
-    service = StatusService()
+def test_create_update_and_lookup_status_by_id_and_url(sqlite_status_service):
+    service = sqlite_status_service
 
     snapshot = service.create_status(
         "https://example.com/jobs/123",
@@ -51,8 +62,28 @@ def test_create_update_and_lookup_status_by_id_and_url():
     assert updated.metadata["validation_score"] == 0.92
 
 
-def test_get_status_by_base_url():
-    service = StatusService()
+def test_get_status_by_base_url(sqlite_status_service):
+    service = sqlite_status_service
+
+
+def test_repository_lookup_used_when_cache_empty(sqlite_status_service):
+    service = sqlite_status_service
+
+    snapshot = service.create_status(
+        "https://example.com/jobs/cache",
+        status="processing",
+        step="received",
+    )
+
+    # Clear in-memory cache to force repository path.
+    service._store.clear()
+    service._job_index.clear()
+    service._hash_index.clear()
+    service._order.clear()
+
+    fetched = service.get_status(status_id=snapshot.status_id)
+    assert fetched is not None
+    assert fetched.status_id == snapshot.status_id
 
     snapshot = service.create_status(
         "https://careers.example.com/jobs/456",

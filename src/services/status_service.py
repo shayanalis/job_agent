@@ -4,8 +4,10 @@ import threading
 import time
 import uuid
 from dataclasses import dataclass, field
-from typing import Dict, Optional, Any, List
+from typing import Any, Dict, List, Optional
 from urllib.parse import urlparse
+
+from src.services.status_repository import StatusRepository
 
 DEFAULT_TTL_SECONDS = 60 * 60  # 1 hour
 
@@ -41,13 +43,18 @@ class StatusSnapshot:
 class StatusService:
     """Manage workflow status snapshots keyed by job URL and status_id."""
 
-    def __init__(self, ttl_seconds: int = DEFAULT_TTL_SECONDS) -> None:
+    def __init__(
+        self,
+        ttl_seconds: int = DEFAULT_TTL_SECONDS,
+        repository: Optional[StatusRepository] = None,
+    ) -> None:
         self._ttl_seconds = ttl_seconds
         self._lock = threading.Lock()
         self._store: Dict[str, StatusSnapshot] = {}
         self._job_index: Dict[str, str] = {}
         self._hash_index: Dict[str, str] = {}
         self._order: List[str] = []
+        self._repository = repository or StatusRepository()
 
     @staticmethod
     def normalize_job_url(url: str) -> str:
@@ -89,12 +96,10 @@ class StatusService:
             job_hash=job_hash,
         )
 
+        self._repository.upsert(snapshot)
         with self._lock:
             self._evict_locked()
-            self._store[status_id] = snapshot
-            self._job_index[snapshot.job_url] = status_id
-            self._index_hash(snapshot)
-            self._touch_order(status_id)
+            self._cache_snapshot_locked(snapshot)
 
         return snapshot
 
@@ -117,14 +122,10 @@ class StatusService:
         with self._lock:
             self._evict_locked()
 
-            snapshot = None
-            if status_id:
-                snapshot = self._store.get(status_id)
-            elif job_url:
-                normalized_job = self.normalize_job_url(job_url)
-                status_id = self._job_index.get(normalized_job)
-                if status_id:
-                    snapshot = self._store.get(status_id)
+            snapshot = self._lookup_locked(
+                status_id=status_id,
+                job_url=job_url,
+            )
 
             if snapshot is None and job_url:
                 # Create snapshot if missing on first update
@@ -138,10 +139,8 @@ class StatusService:
                     metadata=metadata,
                     job_hash=job_hash,
                 )
-                self._store[snapshot.status_id] = snapshot
-                self._job_index[snapshot.job_url] = snapshot.status_id
-                self._index_hash(snapshot)
-                self._touch_order(snapshot.status_id)
+                self._repository.upsert(snapshot)
+                self._cache_snapshot_locked(snapshot)
                 return snapshot
 
             if snapshot is None:
@@ -161,7 +160,9 @@ class StatusService:
             snapshot.updated_at = time.time()
             self._touch_order(snapshot.status_id)
 
-            return snapshot
+        self._repository.upsert(snapshot)
+
+        return snapshot
 
     def get_status(
         self,
@@ -170,59 +171,73 @@ class StatusService:
         job_url: Optional[str] = None,
         base_url: Optional[str] = None,
     ) -> Optional[StatusSnapshot]:
+        snapshot = None
         with self._lock:
             self._evict_locked()
+            snapshot = self._lookup_locked(
+                status_id=status_id,
+                job_url=job_url,
+                base_url=base_url,
+            )
+            if snapshot:
+                return snapshot
 
-            if status_id:
-                snapshot = self._store.get(status_id)
-                if snapshot:
-                    return snapshot
+        if status_id:
+            snapshot = self._repository.get_by_status_id(status_id)
+        if snapshot is None and job_url:
+            snapshot = self._repository.get_by_job_url(self.normalize_job_url(job_url))
+        if snapshot is None and base_url:
+            snapshot = self._repository.get_by_base_url(self.normalize_base_url(base_url))
 
-            if job_url:
-                normalized = self.normalize_job_url(job_url)
-                sid = self._job_index.get(normalized)
-                if sid:
-                    return self._store.get(sid)
-
-            if base_url:
-                normalized_base = self.normalize_base_url(base_url)
-                for sid in reversed(self._order):
-                    snapshot = self._store.get(sid)
-                    if not snapshot:
-                        continue
-                    if snapshot.base_url == normalized_base:
-                        return snapshot
-
-            return None
+        if snapshot:
+            with self._lock:
+                self._cache_snapshot_locked(snapshot)
+        return snapshot
 
     def get_by_hash(self, job_hash: str) -> Optional[StatusSnapshot]:
         with self._lock:
             self._evict_locked()
             sid = self._hash_index.get(job_hash)
             if not sid:
-                return None
-            return self._store.get(sid)
+                snapshot = None
+            else:
+                snapshot = self._store.get(sid)
+
+        if snapshot:
+            return snapshot
+
+        snapshot = self._repository.get_by_hash(job_hash)
+        if snapshot:
+            with self._lock:
+                self._cache_snapshot_locked(snapshot)
+        return snapshot
 
     def list_all(self, include_applied: bool = True) -> List[StatusSnapshot]:
+        snapshots = self._repository.list_recent(include_applied=include_applied)
         with self._lock:
             self._evict_locked()
-            snapshots = [self._store[sid] for sid in self._order if sid in self._store]
-            if not include_applied:
-                snapshots = [
-                    snap for snap in snapshots if not snap.metadata.get("applied", False)
-                ]
-            return list(snapshots)
+            for snapshot in snapshots:
+                self._cache_snapshot_locked(snapshot)
+        return list(snapshots)
 
     def mark_applied(self, status_id: str, applied: bool = True) -> Optional[StatusSnapshot]:
         with self._lock:
             self._evict_locked()
             snapshot = self._store.get(status_id)
-            if not snapshot:
-                return None
-            snapshot.metadata["applied"] = applied
-            snapshot.updated_at = time.time()
-            self._touch_order(status_id)
+            if snapshot:
+                snapshot.metadata["applied"] = applied
+                snapshot.updated_at = time.time()
+                self._touch_order(status_id)
+
+        if snapshot:
+            self._repository.upsert(snapshot)
             return snapshot
+
+        snapshot = self._repository.mark_applied(status_id, applied)
+        if snapshot:
+            with self._lock:
+                self._cache_snapshot_locked(snapshot)
+        return snapshot
 
     def _build_snapshot(
         self,
@@ -253,9 +268,6 @@ class StatusService:
         )
 
     def _evict_locked(self) -> None:
-        if not self._store:
-            return
-
         now = time.time()
         keys_to_delete = [
             key
@@ -271,6 +283,7 @@ class StatusService:
                     self._hash_index.pop(job_hash, None)
                 if key in self._order:
                     self._order.remove(key)
+        self._repository.evict_older_than(self._ttl_seconds)
 
     def _index_hash(self, snapshot: StatusSnapshot) -> None:
         job_hash = snapshot.metadata.get("job_hash")
@@ -281,6 +294,41 @@ class StatusService:
         if status_id in self._order:
             self._order.remove(status_id)
         self._order.append(status_id)
+
+    def _cache_snapshot_locked(self, snapshot: StatusSnapshot) -> None:
+        self._store[snapshot.status_id] = snapshot
+        self._job_index[snapshot.job_url] = snapshot.status_id
+        self._index_hash(snapshot)
+        self._touch_order(snapshot.status_id)
+
+    def _lookup_locked(
+        self,
+        *,
+        status_id: Optional[str] = None,
+        job_url: Optional[str] = None,
+        base_url: Optional[str] = None,
+    ) -> Optional[StatusSnapshot]:
+        if status_id:
+            snapshot = self._store.get(status_id)
+            if snapshot:
+                return snapshot
+
+        if job_url:
+            normalized = self.normalize_job_url(job_url)
+            sid = self._job_index.get(normalized)
+            if sid:
+                snapshot = self._store.get(sid)
+                if snapshot:
+                    return snapshot
+
+        if base_url:
+            normalized_base = self.normalize_base_url(base_url)
+            for sid in reversed(self._order):
+                snapshot = self._store.get(sid)
+                if snapshot and snapshot.base_url == normalized_base:
+                    return snapshot
+
+        return None
 
 
 status_service = StatusService()

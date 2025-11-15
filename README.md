@@ -29,7 +29,7 @@ Browser (Chrome Extension)
    └─ Validate + retry → upload to Drive
         │
         ▼
-Google Drive + Status Service
+Google Drive + SQLite Status Store
 ```
 
 See `Agent_architecture.md` for a deeper dive into each node.
@@ -74,6 +74,7 @@ FLASK_PORT=8000                       # match the Chrome extension default
 LOG_LEVEL=INFO
 VALIDATION_RETRIES=2
 LLM_TEMPERATURE=0.0
+DATABASE_URL=sqlite:////Users/shayan/Documents/Job_Assistant/data/status_snapshots.db
 ```
 
 Place your Google OAuth `credentials.json` in the repository root; the first run will create `token.json`.
@@ -86,6 +87,12 @@ Place your Google OAuth `credentials.json` in the repository root; the first run
 4. Share the folders/files with the Google account used during OAuth if you hit 403 errors.
 
 ## 4. Running the Backend
+
+First initialize the status database (creates the SQLite file defined by `DATABASE_URL`):
+
+```bash
+make -C /Users/shayan/Documents/Job_Assistant migrate-db
+```
 
 ```bash
 python /Users/shayan/Documents/Job_Assistant/run.py
@@ -103,7 +110,7 @@ The server prints a configuration summary on startup and will warn if critical I
 
 ### Workflow status persistence
 
-Statuses live in-memory via `StatusService`. They are keyed by normalized job URL and expire after one hour. The Chrome extension and `/status` endpoint both use that service (`src/services/status_service.py`, `tests/test_status_service.py`).
+Statuses now persist to SQLite via `StatusService` + `StatusRepository`. By default the database lives at `data/status_snapshots.db` (override with `DATABASE_URL`). Records expire after one hour based on `updated_at`, and in-memory caches mirror the DB for fast lookups. Run `make migrate-db` whenever new tables or columns are introduced.
 
 ## 5. Observability
 
@@ -141,13 +148,19 @@ Job_Assistant/
 │   │   ├── state.py          # Typed dict & pydantic models for workflow data
 │   │   ├── jd_analyzer.py    # LangGraph node for JD + metadata extraction
 │   │   └── resume_writer.py  # LangGraph node for TAR-style bullet rewriting
+│   ├── db/
+│   │   ├── base.py           # SQLAlchemy engine/session helpers
+│   │   └── models.py         # ORM models (status snapshots)
 │   ├── graph/workflow.py     # LangGraph definition incl. screening + validation loop
 │   └── services/
 │       ├── document_service.py  # Downloads template, fills placeholders, uploads
 │       ├── drive_service.py     # Google Drive OAuth + file helpers
 │       ├── llm_service.py       # Shared OpenAI client (analysis, rewrite, validation)
 │       ├── screening_service.py # Sponsorship / blocker detection
-│       └── status_service.py    # In-memory status tracking
+│       ├── status_repository.py # SQLite persistence for workflow statuses
+│       └── status_service.py    # Status cache + API surface
+├── scripts/
+│   └── migrate_status_db.py  # Creates the status SQLite tables
 ├── chrome-extension/           # Browser UI to trigger and monitor runs
 ├── generated_resumes/          # Local output cache (also uploaded to Drive)
 ├── mlruns/                     # MLflow traces and runs

@@ -11,6 +11,10 @@ run:
 mlflow:
 	MLFLOW_TRUNCATE_LONG_VALUES=false $(CONDA) run -n $(ENV) --no-capture-output mlflow ui --host 0.0.0.0 --port 5001
 
+# Run database migrations
+migrate-db:
+	$(CONDA) run -n $(ENV) --no-capture-output python -m scripts.migrate_status_db
+
 # Run both (manual split in VS Code)
 all:
 	@echo "VS Code Instructions:"
@@ -23,4 +27,4 @@ all:
 	@echo "Starting server in this terminal..."
 	$(CONDA) run -n $(ENV) python -m src.api.server
 
-.PHONY: run mlflow all
+.PHONY: run mlflow migrate-db all

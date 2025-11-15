@@ -174,7 +174,7 @@ async function refreshStatus() {
     if (matched && snapshot) {
       hideMessage();
       renderActiveSnapshot(snapshot, true);
-      clearHistorySection();
+      await renderRecentSnapshots(snapshot.status_id);
 
       if (!isTerminal(snapshot.status)) {
         startPolling(context);
@@ -184,9 +184,14 @@ async function refreshStatus() {
 
     const allSnapshots = await fetchAllSnapshots(true);
     const normalizedJobUrl = normalized.jobUrl;
+    const normalizedBaseUrl = normalized.baseUrl;
     const matchingSnapshot = allSnapshots.find((snap) => {
       const snapUrl = snap.job_url || '';
       return normalizeUrl(snapUrl).jobUrl === normalizedJobUrl;
+    });
+    const baseMatches = allSnapshots.filter((snap) => {
+      const snapUrl = snap.job_url || '';
+      return normalizeUrl(snapUrl).baseUrl === normalizedBaseUrl;
     });
 
     hideMessage();
@@ -204,6 +209,27 @@ async function refreshStatus() {
       if (remaining.length) {
         renderStatusList(remaining, 'Recent Resumes');
       }
+      if (baseMatches.length) {
+        const remaining = baseMatches.filter(
+          (snap) => snap.status_id !== matchingSnapshot.status_id
+        );
+        if (remaining.length) {
+          renderStatusList(remaining, `Resumes on ${extractHostname(normalizedBaseUrl)}`);
+        }
+      } else {
+        const remaining = allSnapshots.filter(
+          (snap) => snap.status_id !== matchingSnapshot.status_id
+        );
+        if (remaining.length) {
+          renderStatusList(remaining, 'Recent Resumes');
+        }
+      }
+      return;
+    }
+
+    if (baseMatches.length) {
+      clearActiveCard();
+      renderStatusList(baseMatches, `Resumes on ${extractHostname(normalizedBaseUrl)}`);
       return;
     }
 
@@ -329,6 +355,19 @@ async function showAllStatuses() {
     clearActiveCard();
     clearHistorySection();
     updateSelectedSnippet('');
+  }
+}
+
+async function renderRecentSnapshots(excludeStatusId = null) {
+  try {
+    const snapshots = await fetchAllSnapshots(true);
+    const filtered = excludeStatusId
+      ? snapshots.filter((snap) => snap.status_id !== excludeStatusId)
+      : snapshots;
+    renderStatusList(filtered, 'Recent Resumes');
+  } catch (error) {
+    console.warn('Unable to retrieve status list:', error);
+    clearHistorySection();
   }
 }
 
@@ -594,6 +633,18 @@ function normalizeUrl(rawUrl = '') {
   } catch (error) {
     console.warn('Failed to normalize URL:', rawUrl, error);
     return { jobUrl: '', baseUrl: '' };
+  }
+}
+
+function extractHostname(url = '') {
+  if (!url) {
+    return 'this site';
+  }
+  try {
+    const host = new URL(url).host || '';
+    return host.replace(/^www\./, '') || url;
+  } catch (_error) {
+    return url;
   }
 }
 
