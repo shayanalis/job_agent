@@ -1,0 +1,12 @@
+execution_duration_ms: 537295
+request_preview: '{"job_url": "https://jobs.ashbyhq.com/pear/e927b406-dbbd-43a0-a268-d21dbd8cd459",
+  "company": "unknown", "job_title": "unknown"}'
+request_time: '2025-11-10T20:18:46.948Z'
+response_preview: '{"status": "completed", "bullets_count": 29, "validation_score":
+  80.0}'
+state: OK
+trace_id: tr-0ba02d2099a53746d83f37f52e00929c
+trace_location:
+  mlflow_experiment:
+    experiment_id: '233126514594064297'
+  type: MLFLOW_EXPERIMENT

@@ -1,0 +1,12 @@
+execution_duration_ms: 13537
+request_preview: '{"job_url": "https://pghcareerconnector.com/jobs/21820549/software-engineer-vibe-coding-ai",
+  "company": "unknown", "job_title": "unknown"}'
+request_time: '2025-11-11T04:27:17.069Z'
+response_preview: '{"status": "screening_blocked", "bullets_count": 0, "validation_score":
+  0}'
+state: OK
+trace_id: tr-df44a298774d090427b56e171f2ef516
+trace_location:
+  mlflow_experiment:
+    experiment_id: '233126514594064297'
+  type: MLFLOW_EXPERIMENT

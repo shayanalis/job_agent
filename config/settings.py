@@ -10,6 +10,8 @@ load_dotenv()
 # Base paths
 BASE_DIR = Path(__file__).parent.parent
 SRC_DIR = BASE_DIR / "src"
+DATA_DIR = BASE_DIR / "data"
+DATA_DIR.mkdir(parents=True, exist_ok=True)
 
 # API Keys
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
@@ -36,3 +38,7 @@ FLASK_DEBUG = os.getenv("FLASK_DEBUG", "false").lower() == "true"
 
 # Logging
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
+
+# Database
+DEFAULT_DB_PATH = DATA_DIR / "status_snapshots.db"
+DATABASE_URL = os.getenv("DATABASE_URL", f"sqlite:///{DEFAULT_DB_PATH}")

@@ -1,0 +1,12 @@
+execution_duration_ms: 20381
+request_preview: '{"job_url": "https://recruiting.ultipro.com/ONE1018ONSO/JobBoard/1955ffa6-bda6-4c95-8412-2c731d693ab2/OpportunityDetail",
+  "company": "unknown", "job_title": "unknown"}'
+request_time: '2025-11-10T18:38:27.212Z'
+response_preview: '{"status": "screening_blocked", "bullets_count": 0, "validation_score":
+  0}'
+state: OK
+trace_id: tr-1f55cf6adf9627ce5c3fd06b871b6065
+trace_location:
+  mlflow_experiment:
+    experiment_id: '233126514594064297'
+  type: MLFLOW_EXPERIMENT

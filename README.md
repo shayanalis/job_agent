@@ -1,294 +1,170 @@
 # Resume Agent System
 
-Production-quality LangGraph agent system for generating tailored resumes from job descriptions.
+LangGraph-based automation that turns a highlighted job description into a tailored Word resume and tracks progress across browser sessions.
 
-## Features
+## Feature Highlights
 
-- **LangGraph Multi-Agent System**: Orchestrated workflow with JD Analyzer, Resume Writer, and Quality Validator agents
-- **Google Drive Integration**: Dynamically loads resume pointers from Google Drive, uploads generated PDFs
-- **LLM-Powered**: Uses GPT-4 for intelligent analysis and content generation
-- **Quality Validation**: Automatic validation with retry logic for optimal results
-- **Realtime Progress Tracking**: Chrome extension polls the `/status` endpoint to surface workflow progress across popup sessions
-- **Chrome Extension Ready**: Flask API designed to work with browser extensions
+- **Multi-stage LangGraph flow**: Initial screening → pointer ingestion → JD analysis → resume rewrite → document generation → LLM validation with retries
+- **Sponsorship guard rails**: Lightweight screening service flags “no visa sponsorship” jobs before expensive calls
+- **Google Drive integration**: Pointer markdown pulled from Drive, final `.docx` uploaded back with shareable links
+- **Structured LLM services**: Single OpenAI client handles analysis, rewriting, and validation with pydantic-validated outputs
+- **Realtime status service**: `/status` endpoint plus Chrome extension UI retain progress per job URL/status id
+- **Observability via MLflow**: Every workflow run is logged under the `resume-generation` experiment (see `mlruns/`)
 
-## Architecture
+## System Architecture
 
 ```
-Browser → Chrome Extension → Flask API → LangGraph Orchestrator
-         (sends URL + JD)                     ↓
-                                        [Load Pointers]
-                                              ↓
-                                        [Extract Metadata]
-                                              ↓
-                                        [Analyze JD]
-                                              ↓
-                                        [Write Resume]
-                                              ↓
-                                        [Validate] → (retry if needed)
-                                              ↓
-                                        [Generate Doc]
-                                              ↓
-                                        Google Drive Upload
+Browser (Chrome Extension)
+        │
+        ▼
+ Flask API (`/generate-resume`)
+        │
+        ▼
+ LangGraph Workflow
+   ├─ Initial screening (visa / blockers)
+   ├─ Load base pointers from Drive
+   ├─ Analyze JD & extract metadata
+   ├─ Rewrite role bullets + skills
+   ├─ Generate DOCX from Drive template
+   └─ Validate + retry → upload to Drive
+        │
+        ▼
+Google Drive + Status Service
 ```
 
-## Setup
+See `Agent_architecture.md` for a deeper dive into each node.
 
-### 1. Install Dependencies
+## 1. Prerequisites
 
-**Option A: Using Conda (Recommended - Stable Versions)**
+- Python 3.11
+- An OpenAI API key (configured for `gpt-5`/`gpt-5-mini` variants used in `config/settings.py`)
+- Google Cloud project with Drive API enabled and OAuth desktop credentials
+- `mlflow` installed (required by the API to log runs)
+
+## 2. Environment Setup
+
+### Option A – Conda (recommended)
 
 ```bash
-# Quick setup with script
-./setup_conda.sh
-
-# Or manually
-conda env create -f environment.yml
+conda env create -f /Users/shayan/Documents/Job_Assistant/environment.yml
 conda activate resume-agent
 ```
 
-**Option B: Using pip/venv**
+### Option B – venv + pip
 
 ```bash
-# For stable versions
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-pip install -r requirements-stable.txt
-
-# For latest versions (may have compatibility issues)
-pip install -r requirements.txt
+python -m venv .venv
+source .venv/bin/activate  # Windows: .venv\Scripts\activate
+pip install -r /Users/shayan/Documents/Job_Assistant/requirements.txt
+pip install mlflow  # required for server telemetry
 ```
 
-📖 **See [SETUP.md](SETUP.md) for detailed installation instructions and troubleshooting.**
+### Environment variables
 
-### 2. Configure Environment Variables
+Create `/Users/shayan/Documents/Job_Assistant/.env` and populate:
 
-Copy `.env.example` to `.env` and fill in your credentials:
+```
+OPENAI_API_KEY=sk-your-key
+OPENAI_MODEL=gpt-5                    # optional override
+SCREENING_MODEL=gpt-5-mini            # optional override
+GOOGLE_DRIVE_POINTERS_FOLDER_ID=xxx
+GOOGLE_DRIVE_OUTPUT_FOLDER_ID=yyy
+RESUME_TEMPLATE_DRIVE_ID=zzz
+FLASK_PORT=8000                       # match the Chrome extension default
+LOG_LEVEL=INFO
+VALIDATION_RETRIES=2
+LLM_TEMPERATURE=0.0
+```
+
+Place your Google OAuth `credentials.json` in the repository root; the first run will create `token.json`.
+
+## 3. Google Drive Preparation
+
+1. Create two folders: one for **resume pointers** (markdown or text bullet banks) and one for **generated resumes**.
+2. Upload your Word template with placeholders such as `{{CANDIDATE_NAME}}`, `{{LEAFICIENT_EXPERIENCE_BULLET_1}}`, `{{TECHNICAL_SKILLS}}`, etc. The `DocumentService` will clear any unused placeholders automatically.
+3. Record the folder IDs and template file ID from the Drive URLs and copy them into `.env`.
+4. Share the folders/files with the Google account used during OAuth if you hit 403 errors.
+
+## 4. Running the Backend
 
 ```bash
-cp .env.example .env
+python /Users/shayan/Documents/Job_Assistant/run.py
 ```
 
-Required variables:
-- `OPENAI_API_KEY`: Your OpenAI API key
-- `GOOGLE_DRIVE_POINTERS_FOLDER_ID`: Folder ID containing base experience pointer markdown files (raw descriptions to be transformed)
-- `GOOGLE_DRIVE_OUTPUT_FOLDER_ID`: Folder ID for generated resumes  
-- `RESUME_TEMPLATE_DRIVE_ID`: Google Drive file ID of your resume template (.docx file)
+Key endpoints (replace `8000` with your configured `FLASK_PORT`, default is `8002` in code):
 
-### 3. Google Drive Setup
+- `GET /health` – service heartbeat
+- `POST /generate-resume` – main workflow (requires `job_description` + `job_metadata.job_url`)
+- `GET /status` – latest snapshot by `status_id`, `job_url`, or `base_url`
+- `GET /test-drive` – verifies Drive connectivity/listing
+- `POST /test-llm` – smoke test for OpenAI access
 
-1. Go to [Google Cloud Console](https://console.cloud.google.com/)
-2. Create a new project or select existing
-3. Enable Google Drive API
-4. Create OAuth 2.0 credentials (Desktop app)
-5. Download `credentials.json` to project root
-6. **Add yourself as a test user:**
-   - Navigate to your project in Google Cloud Console
-   - Go to "APIs & Services" → "OAuth consent screen"
-   - Scroll down to "Test users" section
-   - Click "+ ADD USERS"
-   - Add your email address
-   - Click "SAVE"
-7. Create folders and upload resume template in Google Drive:
-   - **Resume Pointers** folder (for markdown files with bullet points)
-   - **Generated Resumes** folder (for output .docx files)  
-   - **Upload your resume template** (.docx file) to Google Drive
-8. Get IDs from Google Drive URLs:
-   - **Folder IDs**: `https://drive.google.com/drive/folders/FOLDER_ID_HERE`
-   - **File ID**: `https://drive.google.com/file/d/FILE_ID_HERE/view`
+The server prints a configuration summary on startup and will warn if critical IDs or API keys are missing.
 
-### 4. Prepare Resume Pointers
+### Workflow status persistence
 
-Create markdown files in your Resume Pointers folder:
+Statuses live in-memory via `StatusService`. They are keyed by normalized job URL and expire after one hour. The Chrome extension and `/status` endpoint both use that service (`src/services/status_service.py`, `tests/test_status_service.py`).
 
-**Example: `job1_experience.md`**
-```markdown
-- Architected microservices platform handling 1M+ requests/day
-- Reduced deployment time by 60% through CI/CD automation
-- Led team of 5 engineers in delivering critical features
-```
+## 5. Observability
 
-**Example: `projects.md`**
-```markdown
-- Built real-time analytics dashboard using React and WebSockets
-- Implemented ML pipeline for customer churn prediction (85% accuracy)
-```
-
-### 5. Create Resume Template
-
-1. Create a Word document (`resume_template.docx`) with placeholders:
-   ```
-   {{CANDIDATE_NAME}}
-   {{CONTACT_INFO}}
-
-   PROFESSIONAL SUMMARY
-   {{SUMMARY}}
-
-   EXPERIENCE
-   Current Role
-   {{EXPERIENCE_BULLET_1}}
-   {{EXPERIENCE_BULLET_2}}
-   {{EXPERIENCE_BULLET_3}}
-   {{EXPERIENCE_BULLET_4}}
-
-   SKILLS
-   {{TECHNICAL_SKILLS}}
-   ```
-
-   Note: Use individual bullet placeholders ({{EXPERIENCE_BULLET_1}}, {{EXPERIENCE_BULLET_2}}, etc.) not {{EXPERIENCE_BULLETS_1}}
-
-2. Upload the .docx file to Google Drive and copy the file ID from the URL
-3. Add the file ID to your `.env` file as `RESUME_TEMPLATE_DRIVE_ID`
-
-## Usage
-
-### Chrome Extension
-
-1. Load the extension from the `chrome-extension` directory
-2. Navigate to any job posting page
-3. Select the job description text
-4. Click the extension icon and press "Extract & Send to Server"
-5. The system will:
-   - Extract the selected job description
-   - Send it with the page URL to the backend
-   - Extract job metadata (title, company, etc.) using AI
-   - Generate a tailored resume
-   - Upload to Google Drive and return the link
-6. Re-open the popup on the same tab at any time to view the latest workflow status, even if the site navigates to a different host during the application flow.
-
-### Start the Server
+- Runs are logged to `./mlruns/` under the `resume-generation` experiment.
+- Launch a local UI with the provided Makefile target:
 
 ```bash
-python run.py
+make -C /Users/shayan/Documents/Job_Assistant mlflow
 ```
 
-Server runs on `http://localhost:8000`
+## 6. Chrome Extension
 
-### Test Endpoints
+Path: `/Users/shayan/Documents/Job_Assistant/chrome-extension`
 
-**Health Check:**
-```bash
-curl http://localhost:8000/health
-```
+1. Update `SERVER_BASE_URL` in `popup.js` if your backend is not on `http://localhost:8000`.
+2. Load the directory as an unpacked extension in Chrome.
+3. Highlight a job description, click “Create Resume,” and the popup will poll `/status` until a terminal state is reached.
+4. History for the last five runs is cached per job/base URL to survive popup closes.
 
-**Test Google Drive:**
-```bash
-curl http://localhost:8000/test-drive
-```
+## 7. Tests & Tooling
 
-**Test LLM:**
-```bash
-curl -X POST http://localhost:8000/test-llm \
-  -H "Content-Type: application/json" \
-  -d '{"text": "Sample job description"}'
-```
+- Unit tests: `pytest /Users/shayan/Documents/Job_Assistant/tests`
+- Example ad-hoc script for sponsorship handling: `python /Users/shayan/Documents/Job_Assistant/test_sponsorship.py` (update the URL/port to match your server)
+- Code style: `black src/ tests/`
 
-**Check Workflow Status:**
-```bash
-# Lookup by job URL (automatically normalized server-side)
-curl "http://localhost:8000/status?job_url=https://example.com/jobs/12345"
-
-# Or reuse the status_id returned from /generate-resume
-curl "http://localhost:8000/status?status_id=5f2c1e4d1b734f1f87ad2ca3f8cd1234"
-```
-
-**Generate Resume:**
-```bash
-curl -X POST http://localhost:8000/generate-resume \
-  -H "Content-Type: application/json" \
-  -d '{
-    "job_description": "Full job description text here...",
-    "job_metadata": {
-      "job_url": "https://example.com/jobs/12345"
-    }
-  }'
-```
-
-Note: The system will automatically extract job title, company, and other metadata from the job description using AI.
-
-Response:
-```json
-{
-  "status": "success",
-  "resume_url": "https://docs.google.com/document/d/.../edit",
-  "metadata": {
-    "job_title": "Senior Software Engineer", 
-    "company": "Google",
-    "bullets_count": 10,
-    "keyword_coverage": 85.5,
-    "retry_count": 0
-  }
-}
-```
-
-**Note**: The system now generates .docx files only (no PDF conversion) for optimal ATS compatibility.
-
-## Project Structure
+## 8. Project Structure
 
 ```
-resume-agent/
+Job_Assistant/
 ├── config/
-│   └── settings.py          # Centralized configuration
+│   └── settings.py           # loads .env, centralizes configuration defaults
 ├── src/
-│   ├── agents/              # LangGraph agent nodes
-│   │   ├── state.py         # State schemas
-│   │   ├── jd_analyzer.py   # Job description analysis
-│   │   ├── resume_writer.py # Resume bullet rewriting
-│   │   └── quality_validator.py # Quality validation
-│   ├── graph/
-│   │   └── workflow.py      # LangGraph orchestration
-│   ├── services/
-│   │   ├── drive_service.py # Google Drive API
-│   │   ├── llm_service.py   # OpenAI wrapper
-│   │   └── document_service.py # Word document generation
-│   └── api/
-│       └── server.py        # Flask API
-├── tests/
-├── .env
+│   ├── api/server.py         # Flask app + endpoints
+│   ├── agents/
+│   │   ├── state.py          # Typed dict & pydantic models for workflow data
+│   │   ├── jd_analyzer.py    # LangGraph node for JD + metadata extraction
+│   │   └── resume_writer.py  # LangGraph node for TAR-style bullet rewriting
+│   ├── graph/workflow.py     # LangGraph definition incl. screening + validation loop
+│   └── services/
+│       ├── document_service.py  # Downloads template, fills placeholders, uploads
+│       ├── drive_service.py     # Google Drive OAuth + file helpers
+│       ├── llm_service.py       # Shared OpenAI client (analysis, rewrite, validation)
+│       ├── screening_service.py # Sponsorship / blocker detection
+│       └── status_service.py    # In-memory status tracking
+├── chrome-extension/           # Browser UI to trigger and monitor runs
+├── generated_resumes/          # Local output cache (also uploaded to Drive)
+├── mlruns/                     # MLflow traces and runs
 ├── requirements.txt
-└── run.py
+├── environment.yml
+├── run.py
+└── tests/
 ```
 
-## Configuration
+## 9. Troubleshooting
 
-Edit `.env` to customize:
-- `VALIDATION_RETRIES`: Max retries if validation fails (default: 2)
-- `LLM_TEMPERATURE`: LLM temperature setting (default: 0.3)
-
-**Server Settings:**
-- `FLASK_PORT`: Server port (default: 8000)
-
-## Development
-
-### Run Tests
-
-```bash
-pytest tests/
-```
-
-### Code Formatting
-
-```bash
-black src/ tests/
-```
-
-## Troubleshooting
-
-**Google Drive Authentication:**
-- Delete `token.json` and re-authenticate if you get permission errors
-- Ensure correct scopes in `drive_service.py`
-
-**LLM API Errors:**
-- Check API key is valid and has credits
-- Verify `OPENAI_API_KEY` in `.env`
-
-**Template Issues:**
-- Verify `RESUME_TEMPLATE_DRIVE_ID` is correct
-- Check file permissions in Google Drive
-- Ensure template is a .docx file with proper placeholders
-
-**Document Conversion:**
-- On Linux, install `libreoffice`: `sudo apt-get install libreoffice`
-- On Windows/Mac, ensure Microsoft Word is installed
+- **`OPENAI_API_KEY` errors**: ensure the key has access to the specified models; adjust `OPENAI_MODEL`/`SCREENING_MODEL` if needed.
+- **`mlflow` import failures**: install `mlflow>=2.14` (or run `pip install mlflow`) inside your environment.
+- **Drive pointer folder empty**: confirm the folder ID and that the OAuth account has read access; `DriveService.list_pointer_documents` logs everything it finds.
+- **Sponsorship rejection**: when the screening node detects “no sponsorship,” `/generate-resume` returns a 400 with status `no_sponsorship`.
+- **Template placeholder mismatches**: add placeholders matching the role keys returned by the resume writer (`LEAFICIENT_EXPERIENCE_BULLET_1`, etc.) or they will be cleared.
+- **Port mismatch with Chrome extension**: either set `FLASK_PORT=8000` in `.env` before starting the server or edit `chrome-extension/popup.js`.
 
 ## License
 

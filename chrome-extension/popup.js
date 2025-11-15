@@ -9,6 +9,7 @@ const historySection = document.getElementById('historySection');
 const SERVER_BASE_URL = 'http://localhost:8000';
 const GENERATE_ENDPOINT = `${SERVER_BASE_URL}/generate-resume`;
 const STATUS_ENDPOINT = `${SERVER_BASE_URL}/status`;
+const STATUS_LIST_ENDPOINT = `${SERVER_BASE_URL}/statuses`;
 
 const POLL_INTERVAL_MS = 4000;
 const TERMINAL_STATUSES = new Set(['completed', 'failed', 'no_sponsorship', 'screening_blocked']);
@@ -61,6 +62,7 @@ let pollTimerId = null;
 
 document.addEventListener('DOMContentLoaded', () => {
   processBtn.addEventListener('click', onProcessClick);
+  refreshSelectionPreview();
   refreshStatus();
 });
 
@@ -84,7 +86,7 @@ async function onProcessClick() {
     if (!selectedText || selectedText.length < 50) {
       throw new Error('Please select the job description text on the page first');
     }
-
+    
     updateSelectedSnippet(selectedText);
 
     await chrome.scripting.executeScript({
@@ -97,14 +99,14 @@ async function onProcessClick() {
         console.log('First 200 chars:', text.substring(0, 200) + '...');
       }
     });
-
+    
     const payload = {
       job_description: selectedText,
       job_metadata: {
         job_url: normalized.jobUrl,
       },
     };
-
+    
     const response = await fetch(GENERATE_ENDPOINT, {
       method: 'POST',
       headers: {
@@ -112,7 +114,7 @@ async function onProcessClick() {
       },
       body: JSON.stringify(payload),
     });
-
+    
     const result = await response.json();
     if (!response.ok) {
       const message = result?.error || `Server error (${response.status})`;
@@ -147,14 +149,14 @@ async function refreshStatus() {
     currentTab = await getActiveTab();
     if (!currentTab) {
       setStatusMessage('Unable to determine the active tab.', 'error');
-      await renderHistoryFallback();
+      await showAllStatuses();
       return;
     }
 
     const normalized = normalizeUrl(currentTab.url || '');
     if (!normalized.jobUrl) {
       setStatusMessage('Open a job posting and select the description to begin.', 'info-status');
-      await renderHistoryFallback();
+      await showAllStatuses();
       return;
     }
 
@@ -180,30 +182,45 @@ async function refreshStatus() {
       return;
     }
 
-    const historyEntries = await getRecentHistory();
-    if (!historyEntries.length) {
-      setStatusMessage('No resumes generated yet. Run the extractor on a job description to get started.', 'info-status');
-      clearActiveCard();
-      clearHistorySection();
-    updateSelectedSnippet('');
+    const allSnapshots = await fetchAllSnapshots(true);
+    const normalizedJobUrl = normalized.jobUrl;
+    const matchingSnapshot = allSnapshots.find((snap) => {
+      const snapUrl = snap.job_url || '';
+      return normalizeUrl(snapUrl).jobUrl === normalizedJobUrl;
+    });
+
+    hideMessage();
+    clearHistorySection();
+
+    if (matchingSnapshot) {
+      renderActiveSnapshot(matchingSnapshot, true);
+      if (!isTerminal(matchingSnapshot.status)) {
+        const contextFromMatch = buildContextFromSnapshot(matchingSnapshot);
+        startPolling(contextFromMatch);
+      }
+      const remaining = allSnapshots.filter(
+        (snap) => snap.status_id !== matchingSnapshot.status_id
+      );
+      if (remaining.length) {
+        renderStatusList(remaining, 'Recent Resumes');
+      }
       return;
     }
 
-    const [latestEntry] = historyEntries;
-    const latestContext = buildContextFromEntry(latestEntry, normalized);
-    const latestSnapshot = convertHistoryEntryToSnapshot(latestEntry);
-
-    hideMessage();
-    renderActiveSnapshot(latestSnapshot, false);
-    clearHistorySection();
-
-    if (!isTerminal(latestSnapshot.status)) {
-      startPolling(latestContext);
+    if (!allSnapshots.length) {
+      setStatusMessage('No resumes generated yet. Run the extractor on a job description to get started.', 'info-status');
+      clearActiveCard();
+      clearHistorySection();
+      updateSelectedSnippet('');
+      return;
     }
+
+    clearActiveCard();
+    renderStatusList(allSnapshots, 'Recent Resumes');
   } catch (error) {
     console.error('Failed to refresh status:', error);
     setStatusMessage(`Failed to refresh status: ${escapeHtml(error.message)}`, 'error');
-    await renderHistoryFallback();
+    await showAllStatuses();
   }
 }
 
@@ -229,6 +246,23 @@ async function fetchStatus(context) {
   };
   snapshot.__responseStatus = data.status || 'unknown';
   return snapshot;
+}
+
+async function fetchAllSnapshots(includeApplied = true) {
+  const params = new URLSearchParams();
+  if (!includeApplied) {
+    params.set('include_applied', 'false');
+  }
+  const url = params.toString() ? `${STATUS_LIST_ENDPOINT}?${params}` : STATUS_LIST_ENDPOINT;
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(`Status list request failed (${response.status})`);
+  }
+  const data = await response.json();
+  if (data.status !== 'success') {
+    return [];
+  }
+  return Array.isArray(data.snapshots) ? data.snapshots : [];
 }
 
 function startPolling(context) {
@@ -285,35 +319,40 @@ function renderActiveSnapshot(snapshot, showResumeButton) {
   updateSelectedSnippet(getSelectionSnippet(snapshot));
 }
 
-async function renderHistoryFallback() {
-  const entries = await getRecentHistory();
-  renderHistorySection(entries.slice(0, 1));
+async function showAllStatuses() {
+  try {
+    const snapshots = await fetchAllSnapshots(true);
+    clearActiveCard();
+    renderStatusList(snapshots, 'Recent Resumes');
+  } catch (error) {
+    console.warn('Unable to retrieve status list:', error);
+    clearActiveCard();
+    clearHistorySection();
+    updateSelectedSnippet('');
+  }
 }
 
-function renderHistorySection(entries) {
+function renderStatusList(snapshots, headingText = 'Recent Resumes') {
   clearHistorySection();
+  updateSelectedSnippet('');
 
-  if (!entries || entries.length === 0) {
-    updateSelectedSnippet('');
+  if (!snapshots || !snapshots.length) {
     return;
   }
 
-  const [entry] = entries;
-  const snapshot = convertHistoryEntryToSnapshot(entry);
-  const jobInfo = extractJobInfo(snapshot);
-
   const label = document.createElement('div');
   label.className = 'history-header';
-  label.textContent = 'Most Recent Resume';
+  label.textContent = headingText;
   historySection.appendChild(label);
-
-  const card = buildProgressCard(snapshot, {
-    heading: jobInfo.title || entry.jobUrl || 'Resume',
-    subheading: jobInfo.company || entry.jobUrl || '',
-    showResumeButton: Boolean(snapshot.resume_url),
+  snapshots.forEach((snapshot) => {
+    const jobInfo = extractJobInfo(snapshot);
+    const card = buildProgressCard(snapshot, {
+      heading: jobInfo.title || snapshot.job_url || 'Resume',
+      subheading: jobInfo.company || '',
+      showResumeButton: Boolean(snapshot.resume_url),
+    });
+    historySection.appendChild(card);
   });
-  historySection.appendChild(card);
-  updateSelectedSnippet(getSelectionSnippet(snapshot));
 }
 
 function buildProgressCard(snapshot, options = {}) {
@@ -326,8 +365,12 @@ function buildProgressCard(snapshot, options = {}) {
   const card = document.createElement('div');
   card.className = 'card';
 
-  const titleEl = document.createElement('h2');
+  const isRawUrlHeading = typeof heading === 'string' && /^https?:\/\//i.test(heading.trim());
+  const titleEl = document.createElement(isRawUrlHeading ? 'div' : 'h2');
   titleEl.textContent = heading;
+  if (isRawUrlHeading) {
+    titleEl.className = 'card-url';
+  }
   card.appendChild(titleEl);
 
   if (subheading) {
@@ -392,7 +435,7 @@ function buildProgressCard(snapshot, options = {}) {
   footer.className = 'card-footer';
 
   const updatedAt = snapshot.updated_at ? new Date(snapshot.updated_at * 1000) : null;
-  const updatedText = updatedAt ? `Updated ${updatedAt.toLocaleTimeString()}` : 'In progress';
+  const updatedText = updatedAt ? `Updated ${formatRelativeTime(updatedAt)}` : 'In progress';
 
   if (resumeUrl && showResumeButton) {
     const actionGroup = document.createElement('div');
@@ -481,6 +524,53 @@ function formatStatus(status) {
     not_started: 'Not Started',
   };
   return labels[status] || status;
+}
+
+function formatRelativeTime(date) {
+  if (!(date instanceof Date)) {
+    return 'recently';
+  }
+
+  const now = Date.now();
+  const diffMs = now - date.getTime();
+
+  if (Number.isNaN(diffMs)) {
+    return date.toLocaleString();
+  }
+
+  if (diffMs < 0) {
+    return date.toLocaleString();
+  }
+
+  const diffSeconds = Math.floor(diffMs / 1000);
+  if (diffSeconds < 30) {
+    return 'just now';
+  }
+  if (diffSeconds < 60) {
+    return 'less than a minute ago';
+  }
+
+  const diffMinutes = Math.floor(diffSeconds / 60);
+  if (diffMinutes < 60) {
+    return diffMinutes === 1 ? '1 minute ago' : `${diffMinutes} minutes ago`;
+  }
+
+  const diffHours = Math.floor(diffMinutes / 60);
+  if (diffHours < 24) {
+    return diffHours === 1 ? '1 hour ago' : `${diffHours} hours ago`;
+  }
+
+  const diffDays = Math.floor(diffHours / 24);
+  if (diffDays < 7) {
+    return diffDays === 1 ? '1 day ago' : `${diffDays} days ago`;
+  }
+
+  const diffWeeks = Math.floor(diffDays / 7);
+  if (diffWeeks < 5) {
+    return diffWeeks === 1 ? '1 week ago' : `${diffWeeks} weeks ago`;
+  }
+
+  return date.toLocaleDateString();
 }
 
 function isTerminal(status) {
@@ -572,6 +662,12 @@ async function updateStoredStatusMaps(tabId, snapshot) {
   if (!snapshot.selection_snippet && selectionSnippet) {
     snapshot.selection_snippet = selectionSnippet;
   }
+  const jobHash =
+    snapshot.metadata?.job_hash ||
+    snapshot.metadata?.job_metadata?.job_hash ||
+    snapshot.job_hash ||
+    existingEntries.find((item) => item && item.jobHash)?.jobHash ||
+    '';
 
   const entry = {
     statusId: snapshot.status_id,
@@ -579,6 +675,7 @@ async function updateStoredStatusMaps(tabId, snapshot) {
     baseUrl: normalizedBase,
     updatedAt: snapshot.updated_at ? snapshot.updated_at * 1000 : Date.now(),
     selectionSnippet,
+    jobHash,
   };
 
   if (tabId !== null && tabId !== undefined) {
@@ -682,6 +779,21 @@ function buildContextFromEntry(entry, fallbackNormalized) {
   };
 }
 
+function buildContextFromSnapshot(snapshot) {
+  if (!snapshot) {
+    return {
+      statusId: null,
+      jobUrl: '',
+      baseUrl: '',
+    };
+  }
+  return {
+    statusId: snapshot.status_id || null,
+    jobUrl: snapshot.job_url || '',
+    baseUrl: snapshot.base_url || '',
+  };
+}
+
 function getSelectionSnippet(snapshot) {
   if (!snapshot) {
     return '';
@@ -693,6 +805,22 @@ function getSelectionSnippet(snapshot) {
     || '';
 }
 
+async function refreshSelectionPreview() {
+  try {
+    const tab = await getActiveTab();
+    if (!tab?.id) {
+      return;
+    }
+
+    const selectedText = await getSelectionFromTab(tab.id);
+    if (selectedText) {
+      updateSelectedSnippet(selectedText);
+    }
+  } catch (error) {
+    console.warn('Unable to read current selection snippet:', error);
+  }
+}
+
 function updateSelectedSnippet(text) {
   if (!selectedSnippetDiv) {
     return;
@@ -701,10 +829,12 @@ function updateSelectedSnippet(text) {
   if (text) {
     const trimmed = text.slice(0, 30);
     selectedSnippetDiv.textContent = `Selected: “${trimmed}${text.length > 30 ? '…' : ''}”`;
-    selectedSnippetDiv.style.display = 'block';
+    selectedSnippetDiv.style.display = 'inline-flex';
+    selectedSnippetDiv.setAttribute('title', text);
   } else {
     selectedSnippetDiv.textContent = '';
     selectedSnippetDiv.style.display = 'none';
+    selectedSnippetDiv.removeAttribute('title');
   }
 }
 

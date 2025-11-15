@@ -1,0 +1,12 @@
+execution_duration_ms: 358514
+request_preview: '{"job_url": "https://job-boards.greenhouse.io/skildai-careers/jobs/4483871008",
+  "company": "unknown", "job_title": "unknown"}'
+request_time: '2025-11-15T01:41:44.414Z'
+response_preview: '{"status": "completed", "bullets_count": 22, "validation_score":
+  80.0}'
+state: OK
+trace_id: tr-f538375c1d2844cc28001f806a31b044
+trace_location:
+  mlflow_experiment:
+    experiment_id: '233126514594064297'
+  type: MLFLOW_EXPERIMENT

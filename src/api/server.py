@@ -1,5 +1,6 @@
 """Flask API server for resume generation."""
 
+import hashlib
 import logging
 import time
 import mlflow
@@ -91,6 +92,8 @@ def generate_resume():
 
         logger.info(f"Received resume generation request for URL: {job_url}")
 
+        job_hash = _derive_job_hash(job_url, job_description)
+
         status_snapshot = status_service.create_status(
             job_url=job_url,
             status="processing",
@@ -99,7 +102,9 @@ def generate_resume():
             metadata={
                 "job_title": job_metadata.get("title"),
                 "company": job_metadata.get("company"),
+                "job_hash": job_hash,
             },
+            job_hash=job_hash,
         )
         status_id = status_snapshot.status_id
 
@@ -108,6 +113,7 @@ def generate_resume():
             "job_description": job_description,
             "job_metadata": job_metadata,
             "status_id": status_id,
+            "job_hash": job_hash,
             "base_resume_pointers": None,
             "analyzed_requirements": None,
             "resume_sections": None,
@@ -314,6 +320,41 @@ def get_status():
     }), 200
 
 
+@app.route('/statuses', methods=['GET'])
+def list_statuses():
+    """Return all tracked resume statuses."""
+
+    include_applied_raw = request.args.get('include_applied', 'true').strip().lower()
+    include_applied = include_applied_raw not in ('false', '0', 'no')
+
+    snapshots = status_service.list_all(include_applied=include_applied)
+    return jsonify({
+        "status": "success",
+        "snapshots": [snap.to_dict() for snap in snapshots]
+    }), 200
+
+
+@app.route('/statuses/<status_id>/applied', methods=['POST'])
+def set_status_applied(status_id: str):
+    """Mark a workflow status as applied or not applied."""
+
+    body = request.get_json(silent=True) or {}
+    applied_raw = body.get('applied', True)
+    applied = bool(applied_raw)
+
+    snapshot = status_service.mark_applied(status_id, applied=applied)
+    if snapshot is None:
+        return jsonify({
+            "status": "failed",
+            "error": "status_id not found"
+        }), 404
+
+    return jsonify({
+        "status": "success",
+        "snapshot": snapshot.to_dict()
+    }), 200
+
+
 @app.route('/test-drive', methods=['GET'])
 def test_drive():
     """Test Google Drive connection.
@@ -397,6 +438,13 @@ def internal_error(error):
         "error": "Internal server error",
         "status": "failed"
     }), 500
+
+
+def _derive_job_hash(job_url: str, job_description: str, snippet_length: int = 200) -> str:
+    normalized_url = status_service.normalize_job_url(job_url)
+    snippet = (job_description or "")[:snippet_length].strip()
+    digest = hashlib.sha256(f"{normalized_url}::{snippet}".encode("utf-8")).hexdigest()
+    return digest
 
 
 def run_server():

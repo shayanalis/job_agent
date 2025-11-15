@@ -19,6 +19,7 @@ flask-cors==4.0.1
 # Utilities
 python-dotenv==1.0.1
 pydantic==2.9.2
+SQLAlchemy==2.0.35
 
 # Development
 pytest==8.3.3

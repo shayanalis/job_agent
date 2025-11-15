@@ -90,6 +90,15 @@
       color: #6b7280;
       margin-bottom: 8px;
     }
+    .card-url {
+      font-size: 12px;
+      color: #6b7280;
+      font-weight: 400;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      margin-bottom: 6px;
+    }
     .stage-pill {
       display: inline-flex;
       align-items: center;
@@ -153,6 +162,12 @@
       background: #9ca3af;
       cursor: not-allowed;
     }
+    .action-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 12px;
+    }
     .history-header {
       margin-top: 18px;
       font-size: 14px;
@@ -171,8 +186,11 @@
     .selected-snippet {
       font-size: 12px;
       color: #4b5563;
-      margin: 8px 0;
       display: none;
+      max-width: 220px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
     .loading {
       display: inline-block;
@@ -194,17 +212,19 @@
 <body>
   <h1>Job Description Extractor</h1>
   
-  <button id="processBtn" class="primary-btn" title="Create resume">
-    <span class="btn-icon" aria-hidden="true">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M12 5v14M5 12h14" />
-      </svg>
-    </span>
-    <span>Create Resume</span>
-  </button>
+  <div class="action-row">
+    <button id="processBtn" class="primary-btn" title="Create resume">
+      <span class="btn-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 5v14M5 12h14" />
+        </svg>
+      </span>
+      <span>Create Resume</span>
+    </button>
+    <div id="selectedSnippet" class="selected-snippet" aria-live="polite"></div>
+  </div>
   
   <div id="message" class="status info-status"></div>
-  <div id="selectedSnippet" class="selected-snippet"></div>
   <div id="activeCard"></div>
   <div id="historySection"></div>
   

@@ -1,0 +1,12 @@
+execution_duration_ms: 304322
+request_preview: '{"job_url": "https://snowrelic.com/careers", "company": "unknown",
+  "job_title": "unknown"}'
+request_time: '2025-11-11T04:23:52.301Z'
+response_preview: '{"status": "completed", "bullets_count": 35, "validation_score":
+  100.0}'
+state: OK
+trace_id: tr-5fee2999186cf1bdfaa637df9b8c7fce
+trace_location:
+  mlflow_experiment:
+    experiment_id: '233126514594064297'
+  type: MLFLOW_EXPERIMENT

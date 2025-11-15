@@ -4,7 +4,7 @@ import threading
 import time
 import uuid
 from dataclasses import dataclass, field
-from typing import Dict, Optional, Any
+from typing import Dict, Optional, Any, List
 from urllib.parse import urlparse
 
 DEFAULT_TTL_SECONDS = 60 * 60  # 1 hour
@@ -46,6 +46,8 @@ class StatusService:
         self._lock = threading.Lock()
         self._store: Dict[str, StatusSnapshot] = {}
         self._job_index: Dict[str, str] = {}
+        self._hash_index: Dict[str, str] = {}
+        self._order: List[str] = []
 
     @staticmethod
     def normalize_job_url(url: str) -> str:
@@ -74,6 +76,7 @@ class StatusService:
         step: str = "received",
         message: str = "",
         metadata: Optional[Dict[str, Any]] = None,
+        job_hash: Optional[str] = None,
     ) -> StatusSnapshot:
         status_id = uuid.uuid4().hex
         snapshot = self._build_snapshot(
@@ -83,12 +86,15 @@ class StatusService:
             step=step,
             message=message,
             metadata=metadata,
+            job_hash=job_hash,
         )
 
         with self._lock:
             self._evict_locked()
             self._store[status_id] = snapshot
             self._job_index[snapshot.job_url] = status_id
+            self._index_hash(snapshot)
+            self._touch_order(status_id)
 
         return snapshot
 
@@ -102,6 +108,8 @@ class StatusService:
         message: str = "",
         resume_url: str = "",
         metadata: Optional[Dict[str, Any]] = None,
+        applied: Optional[bool] = None,
+        job_hash: Optional[str] = None,
     ) -> Optional[StatusSnapshot]:
         if not status_id and not job_url:
             raise ValueError("Either status_id or job_url is required to update status")
@@ -128,9 +136,12 @@ class StatusService:
                     message=message,
                     resume_url=resume_url,
                     metadata=metadata,
+                    job_hash=job_hash,
                 )
                 self._store[snapshot.status_id] = snapshot
                 self._job_index[snapshot.job_url] = snapshot.status_id
+                self._index_hash(snapshot)
+                self._touch_order(snapshot.status_id)
                 return snapshot
 
             if snapshot is None:
@@ -140,8 +151,15 @@ class StatusService:
             snapshot.step = step
             snapshot.message = message
             snapshot.resume_url = resume_url
-            snapshot.metadata = metadata or {}
+            if metadata is not None:
+                snapshot.metadata.update(metadata)
+            if applied is not None:
+                snapshot.metadata["applied"] = applied
+            if job_hash:
+                snapshot.metadata["job_hash"] = job_hash
+                self._hash_index[job_hash] = snapshot.status_id
             snapshot.updated_at = time.time()
+            self._touch_order(snapshot.status_id)
 
             return snapshot
 
@@ -168,11 +186,43 @@ class StatusService:
 
             if base_url:
                 normalized_base = self.normalize_base_url(base_url)
-                for snapshot in self._store.values():
+                for sid in reversed(self._order):
+                    snapshot = self._store.get(sid)
+                    if not snapshot:
+                        continue
                     if snapshot.base_url == normalized_base:
                         return snapshot
 
             return None
+
+    def get_by_hash(self, job_hash: str) -> Optional[StatusSnapshot]:
+        with self._lock:
+            self._evict_locked()
+            sid = self._hash_index.get(job_hash)
+            if not sid:
+                return None
+            return self._store.get(sid)
+
+    def list_all(self, include_applied: bool = True) -> List[StatusSnapshot]:
+        with self._lock:
+            self._evict_locked()
+            snapshots = [self._store[sid] for sid in self._order if sid in self._store]
+            if not include_applied:
+                snapshots = [
+                    snap for snap in snapshots if not snap.metadata.get("applied", False)
+                ]
+            return list(snapshots)
+
+    def mark_applied(self, status_id: str, applied: bool = True) -> Optional[StatusSnapshot]:
+        with self._lock:
+            self._evict_locked()
+            snapshot = self._store.get(status_id)
+            if not snapshot:
+                return None
+            snapshot.metadata["applied"] = applied
+            snapshot.updated_at = time.time()
+            self._touch_order(status_id)
+            return snapshot
 
     def _build_snapshot(
         self,
@@ -184,9 +234,13 @@ class StatusService:
         message: str = "",
         resume_url: str = "",
         metadata: Optional[Dict[str, Any]] = None,
+        job_hash: Optional[str] = None,
     ) -> StatusSnapshot:
         normalized_job = self.normalize_job_url(job_url)
         normalized_base = self.normalize_base_url(job_url)
+        snapshot_metadata = metadata.copy() if metadata else {}
+        if job_hash:
+            snapshot_metadata.setdefault("job_hash", job_hash)
         return StatusSnapshot(
             status_id=status_id,
             job_url=normalized_job,
@@ -195,7 +249,7 @@ class StatusService:
             step=step,
             message=message,
             resume_url=resume_url,
-            metadata=metadata or {},
+            metadata=snapshot_metadata,
         )
 
     def _evict_locked(self) -> None:
@@ -212,6 +266,21 @@ class StatusService:
             snapshot = self._store.pop(key, None)
             if snapshot:
                 self._job_index.pop(snapshot.job_url, None)
+                job_hash = snapshot.metadata.get("job_hash")
+                if job_hash and self._hash_index.get(job_hash) == key:
+                    self._hash_index.pop(job_hash, None)
+                if key in self._order:
+                    self._order.remove(key)
+
+    def _index_hash(self, snapshot: StatusSnapshot) -> None:
+        job_hash = snapshot.metadata.get("job_hash")
+        if job_hash:
+            self._hash_index[job_hash] = snapshot.status_id
+
+    def _touch_order(self, status_id: str) -> None:
+        if status_id in self._order:
+            self._order.remove(status_id)
+        self._order.append(status_id)
 
 
 status_service = StatusService()
