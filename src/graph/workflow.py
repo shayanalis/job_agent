@@ -521,7 +521,7 @@ def should_continue_after_analyze(state: AgentState) -> Literal["continue", "end
             state,
             status="no_sponsorship",
             step="no_sponsorship",
-            message="Job does not provide sponsorship",
+            message="cancelled: no visa sponsorship",
             metadata=metadata_payload,
         )
         return "end"

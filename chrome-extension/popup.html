@@ -77,18 +77,47 @@
       border-radius: 8px;
       border: 1px solid #e5e7eb;
       padding: 14px;
+      padding-bottom: 28px;
       box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08);
       margin-top: 12px;
+      position: relative;
+    }
+    .card-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 4px;
+    }
+    .card-title-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex: 1;
+      min-width: 0;
     }
     .card h2 {
-      margin: 0 0 4px;
+      margin: 0;
       font-size: 15px;
       color: #1f2937;
+      flex: 1;
+      min-width: 0;
     }
     .card small {
       display: block;
       color: #6b7280;
       margin-bottom: 8px;
+    }
+    .match-pill {
+      display: inline-flex;
+      align-items: center;
+      padding: 2px 8px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 500;
+      background: #eff6ff;
+      color: #1d4ed8;
+      white-space: nowrap;
     }
     .card-url {
       font-size: 12px;
@@ -131,13 +160,11 @@
       background: currentColor;
     }
     .card-footer {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      gap: 10px;
-      font-size: 13px;
+      position: absolute;
+      bottom: 4px;
+      right: 8px;
+      font-size: 11px;
       color: #6b7280;
-      margin-top: 12px;
     }
     .resume-action {
       display: inline-flex;
@@ -148,19 +175,58 @@
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      width: 32px;
-      height: 32px;
-      border-radius: 999px;
-      background: #059669;
-      color: white;
-      transition: background 0.2s ease;
+      width: 28px;
+      height: 28px;
+      border-radius: 6px;
+      background: transparent;
+      color: #1f2937;
+      border: 1.5px solid #1f2937;
+      transition: all 0.2s ease;
+      flex-shrink: 0;
     }
     .resume-icon:hover {
-      background: #047857;
+      background: #1f2937;
+      color: white;
     }
     .resume-icon:disabled {
-      background: #9ca3af;
+      border-color: #9ca3af;
+      color: #9ca3af;
       cursor: not-allowed;
+    }
+    .resume-icon svg {
+      width: 16px;
+      height: 16px;
+    }
+    .applied-icon {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 28px;
+      height: 28px;
+      border-radius: 6px;
+      background: transparent;
+      color: #2563eb;
+      border: 1.5px solid #2563eb;
+      transition: all 0.2s ease;
+      flex-shrink: 0;
+    }
+    .applied-icon:hover {
+      background: #2563eb;
+      color: white;
+    }
+    .applied-icon:disabled {
+      border-color: #9ca3af;
+      color: #9ca3af;
+      cursor: not-allowed;
+    }
+    .applied-icon svg {
+      width: 16px;
+      height: 16px;
+    }
+    .card-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
     }
     .action-row {
       display: flex;
@@ -207,6 +273,56 @@
       0% { transform: rotate(0deg); }
       100% { transform: rotate(360deg); }
     }
+    .applied-section {
+      margin-top: 18px;
+    }
+    .applied-toggle {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      width: 100%;
+      padding: 8px 0;
+      background: transparent;
+      border: none;
+      cursor: pointer;
+      color: #6b7280;
+      font-size: 13px;
+      transition: color 0.2s ease;
+    }
+    .applied-toggle:hover {
+      color: #374151;
+    }
+    .applied-toggle-text {
+      font-weight: 500;
+    }
+    .applied-chevron {
+      width: 16px;
+      height: 16px;
+      transition: transform 0.2s ease;
+    }
+    .applied-toggle.expanded .applied-chevron {
+      transform: rotate(180deg);
+    }
+    .applied-container {
+      max-height: 800px;
+      overflow-y: auto;
+      margin-top: 8px;
+      padding-right: 4px;
+    }
+    .applied-container::-webkit-scrollbar {
+      width: 6px;
+    }
+    .applied-container::-webkit-scrollbar-track {
+      background: #f3f4f6;
+      border-radius: 3px;
+    }
+    .applied-container::-webkit-scrollbar-thumb {
+      background: #d1d5db;
+      border-radius: 3px;
+    }
+    .applied-container::-webkit-scrollbar-thumb:hover {
+      background: #9ca3af;
+    }
   </style>
 </head>
 <body>
@@ -228,7 +344,15 @@
   <div id="activeCard"></div>
   <div id="historySection"></div>
   
-  <p class="info">Highlight the job text, then press the button.</p>
+  <div id="appliedSection" class="applied-section">
+    <button id="appliedToggle" class="applied-toggle">
+      <span class="applied-toggle-text">Applied</span>
+      <svg class="applied-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M4 9l6 6 6-6" />
+      </svg>
+    </button>
+    <div id="appliedContainer" class="applied-container" style="display: none;"></div>
+  </div>
   
   <script src="popup.js"></script>
 </body>

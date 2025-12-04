@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import json
 from contextlib import contextmanager
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Iterable, List, Optional, TYPE_CHECKING
 
-from sqlalchemy import delete, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from config.settings import DATABASE_URL
@@ -112,12 +112,6 @@ class StatusRepository:
         with self.session_scope() as session:
             models = session.scalars(stmt).all()
             return [snap for snap in map(self._model_to_snapshot, models) if snap is not None]
-
-    def evict_older_than(self, ttl_seconds: int) -> None:
-        threshold = datetime.utcnow() - timedelta(seconds=ttl_seconds)
-        stmt = delete(StatusSnapshotModel).where(StatusSnapshotModel.updated_at < threshold)
-        with self.session_scope() as session:
-            session.execute(stmt)
 
     def mark_applied(self, status_id: str, applied: bool) -> Optional["StatusSnapshot"]:
         with self.session_scope() as session:

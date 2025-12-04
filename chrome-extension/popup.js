@@ -5,20 +5,18 @@ const messageDiv = document.getElementById('message');
 const selectedSnippetDiv = document.getElementById('selectedSnippet');
 const activeCardContainer = document.getElementById('activeCard');
 const historySection = document.getElementById('historySection');
+const appliedToggle = document.getElementById('appliedToggle');
+const appliedContainer = document.getElementById('appliedContainer');
 
 const SERVER_BASE_URL = 'http://localhost:8000';
 const GENERATE_ENDPOINT = `${SERVER_BASE_URL}/generate-resume`;
 const STATUS_ENDPOINT = `${SERVER_BASE_URL}/status`;
 const STATUS_LIST_ENDPOINT = `${SERVER_BASE_URL}/statuses`;
+const MARK_APPLIED_ENDPOINT = (statusId) => `${SERVER_BASE_URL}/statuses/${statusId}/applied`;
+const DOWNLOAD_RESUME_ENDPOINT = `${SERVER_BASE_URL}/download-resume`;
 
 const POLL_INTERVAL_MS = 4000;
 const TERMINAL_STATUSES = new Set(['completed', 'failed', 'no_sponsorship', 'screening_blocked']);
-
-const TAB_STATUS_KEY = 'tabStatusMap';
-const JOB_STATUS_KEY = 'jobStatusMap';
-const BASE_STATUS_KEY = 'baseStatusMap';
-const RECENT_STATUS_KEY = 'recentStatusHistory';
-const MAX_HISTORY_ENTRIES = 5;
 
 const STEP_LABELS = new Map([
   ['screening', 'Screening'],
@@ -34,7 +32,7 @@ const STEP_LABELS = new Map([
   ['jd_analyzed', 'JD Analyzed'],
   ['jd_analysis_failed', 'JD Analysis Failed'],
   ['analysis_failed', 'JD Analysis Failed'],
-  ['no_sponsorship', 'No Sponsorship'],
+  ['no_sponsorship', 'Stopped'],
   ['writing_resume', 'Writing Resume'],
   ['resume_written', 'Resume Drafted'],
   ['resume_write_failed', 'Resume Draft Failed'],
@@ -59,9 +57,11 @@ const STEP_LABELS = new Map([
 
 let currentTab = null;
 let pollTimerId = null;
+let activeContext = null;
 
 document.addEventListener('DOMContentLoaded', () => {
   processBtn.addEventListener('click', onProcessClick);
+  appliedToggle.addEventListener('click', toggleAppliedSection);
   refreshSelectionPreview();
   refreshStatus();
 });
@@ -122,10 +122,11 @@ async function onProcessClick() {
     }
 
     if (result.status_id) {
-      await updateStoredStatusMaps(
-        currentTab.id,
-        { ...result, selection_snippet: selectedText }
-      );
+      activeContext = {
+        statusId: result.status_id,
+        jobUrl: normalized.jobUrl,
+        baseUrl: normalized.baseUrl,
+      };
     }
 
     setStatusMessage('Tracking resume generation…', 'info-status');
@@ -160,76 +161,53 @@ async function refreshStatus() {
       return;
     }
 
-    const storedEntry = await getStoredStatusEntry(currentTab.id, normalized.jobUrl, normalized.baseUrl);
-    const context = buildContextFromEntry(storedEntry, normalized);
+    const context = {
+      statusId: activeContext?.statusId || null,
+      jobUrl: activeContext?.jobUrl || normalized.jobUrl,
+      baseUrl: activeContext?.baseUrl || normalized.baseUrl,
+    };
 
-    let snapshot = null;
-    let matched = Boolean(context.statusId);
+    let snapshot = await fetchStatus(context);
+    const matched = snapshot && snapshot.__responseStatus === 'success';
 
     if (matched) {
-      snapshot = await fetchStatus(context);
-      matched = snapshot.__responseStatus === 'success';
-    }
-
-    if (matched && snapshot) {
       hideMessage();
+      setActiveContextFromSnapshot(snapshot);
       renderActiveSnapshot(snapshot, true);
       await renderRecentSnapshots(snapshot.status_id);
 
       if (!isTerminal(snapshot.status)) {
-        startPolling(context);
+        startPolling();
       }
       return;
     }
 
-    const allSnapshots = await fetchAllSnapshots(true);
+    const allSnapshots = await fetchAllSnapshots(false);
     const normalizedJobUrl = normalized.jobUrl;
     const normalizedBaseUrl = normalized.baseUrl;
-    const matchingSnapshot = allSnapshots.find((snap) => {
-      const snapUrl = snap.job_url || '';
-      return normalizeUrl(snapUrl).jobUrl === normalizedJobUrl;
-    });
-    const baseMatches = allSnapshots.filter((snap) => {
-      const snapUrl = snap.job_url || '';
-      return normalizeUrl(snapUrl).baseUrl === normalizedBaseUrl;
-    });
+
+    const matchingSnapshot =
+      allSnapshots.find((snap) => {
+        const snapUrl = snap.job_url || '';
+        const parsed = normalizeUrl(snapUrl);
+        return parsed.jobUrl === normalizedJobUrl;
+      }) ||
+      allSnapshots.find((snap) => {
+        const snapUrl = snap.job_url || '';
+        const parsed = normalizeUrl(snapUrl);
+        return parsed.baseUrl === normalizedBaseUrl;
+      });
 
     hideMessage();
     clearHistorySection();
 
     if (matchingSnapshot) {
+      setActiveContextFromSnapshot(matchingSnapshot);
       renderActiveSnapshot(matchingSnapshot, true);
+      await renderRecentSnapshots(matchingSnapshot.status_id);
       if (!isTerminal(matchingSnapshot.status)) {
-        const contextFromMatch = buildContextFromSnapshot(matchingSnapshot);
-        startPolling(contextFromMatch);
+        startPolling();
       }
-      const remaining = allSnapshots.filter(
-        (snap) => snap.status_id !== matchingSnapshot.status_id
-      );
-      if (remaining.length) {
-        renderStatusList(remaining, 'Recent Resumes');
-      }
-      if (baseMatches.length) {
-        const remaining = baseMatches.filter(
-          (snap) => snap.status_id !== matchingSnapshot.status_id
-        );
-        if (remaining.length) {
-          renderStatusList(remaining, `Resumes on ${extractHostname(normalizedBaseUrl)}`);
-        }
-      } else {
-        const remaining = allSnapshots.filter(
-          (snap) => snap.status_id !== matchingSnapshot.status_id
-        );
-        if (remaining.length) {
-          renderStatusList(remaining, 'Recent Resumes');
-        }
-      }
-      return;
-    }
-
-    if (baseMatches.length) {
-      clearActiveCard();
-      renderStatusList(baseMatches, `Resumes on ${extractHostname(normalizedBaseUrl)}`);
       return;
     }
 
@@ -238,6 +216,7 @@ async function refreshStatus() {
       clearActiveCard();
       clearHistorySection();
       updateSelectedSnippet('');
+      activeContext = null;
       return;
     }
 
@@ -274,7 +253,7 @@ async function fetchStatus(context) {
   return snapshot;
 }
 
-async function fetchAllSnapshots(includeApplied = true) {
+async function fetchAllSnapshots(includeApplied = false) {
   const params = new URLSearchParams();
   if (!includeApplied) {
     params.set('include_applied', 'false');
@@ -291,23 +270,20 @@ async function fetchAllSnapshots(includeApplied = true) {
   return Array.isArray(data.snapshots) ? data.snapshots : [];
 }
 
-function startPolling(context) {
+function startPolling() {
+  if (!activeContext) {
+    return;
+  }
   stopPolling();
 
   pollTimerId = setInterval(async () => {
     try {
-      const snapshot = await fetchStatus(context);
-
-      if (snapshot.status_id) {
-        await updateStoredStatusMaps(currentTab?.id ?? null, snapshot);
-        context.statusId = snapshot.status_id;
-        context.jobUrl = snapshot.job_url || context.jobUrl;
-        context.baseUrl = snapshot.base_url || context.baseUrl;
-      }
+      const snapshot = await fetchStatus(activeContext);
+      setActiveContextFromSnapshot(snapshot);
 
       hideMessage();
       renderActiveSnapshot(snapshot, true);
-      clearHistorySection();
+      await renderRecentSnapshots(snapshot.status_id);
 
       if (isTerminal(snapshot.status)) {
         stopPolling();
@@ -347,7 +323,7 @@ function renderActiveSnapshot(snapshot, showResumeButton) {
 
 async function showAllStatuses() {
   try {
-    const snapshots = await fetchAllSnapshots(true);
+    const snapshots = await fetchAllSnapshots(false);
     clearActiveCard();
     renderStatusList(snapshots, 'Recent Resumes');
   } catch (error) {
@@ -360,7 +336,7 @@ async function showAllStatuses() {
 
 async function renderRecentSnapshots(excludeStatusId = null) {
   try {
-    const snapshots = await fetchAllSnapshots(true);
+    const snapshots = await fetchAllSnapshots(false);
     const filtered = excludeStatusId
       ? snapshots.filter((snap) => snap.status_id !== excludeStatusId)
       : snapshots;
@@ -369,6 +345,19 @@ async function renderRecentSnapshots(excludeStatusId = null) {
     console.warn('Unable to retrieve status list:', error);
     clearHistorySection();
   }
+}
+
+function setActiveContextFromSnapshot(snapshot) {
+  if (!snapshot) {
+    activeContext = null;
+    return;
+  }
+
+  activeContext = {
+    statusId: snapshot.status_id || null,
+    jobUrl: snapshot.job_url || activeContext?.jobUrl || '',
+    baseUrl: snapshot.base_url || activeContext?.baseUrl || '',
+  };
 }
 
 function renderStatusList(snapshots, headingText = 'Recent Resumes') {
@@ -404,22 +393,137 @@ function buildProgressCard(snapshot, options = {}) {
   const card = document.createElement('div');
   card.className = 'card';
 
+  const resumeUrl = snapshot.resume_url || (snapshot.metadata && snapshot.metadata.resume_url);
+  const isCompletedStatus = snapshot.status === 'completed' || snapshot.status === 'success';
+
+  // Header row with title, match pill, and resume button
+  const headerRow = document.createElement('div');
+  headerRow.className = 'card-header';
+
+  const titleRow = document.createElement('div');
+  titleRow.className = 'card-title-row';
+
   const isRawUrlHeading = typeof heading === 'string' && /^https?:\/\//i.test(heading.trim());
   const titleEl = document.createElement(isRawUrlHeading ? 'div' : 'h2');
   titleEl.textContent = heading;
   if (isRawUrlHeading) {
     titleEl.className = 'card-url';
   }
-  card.appendChild(titleEl);
+  titleRow.appendChild(titleEl);
+
+  // Add match pill next to title
+  const metadata = snapshot.metadata || {};
+  if (metadata.validation_result && typeof metadata.validation_result.keyword_coverage_score === 'number') {
+    let coverageValue = metadata.validation_result.keyword_coverage_score;
+    if (coverageValue <= 1) {
+      coverageValue = Math.round(coverageValue * 100);
+    } else {
+      coverageValue = Math.round(coverageValue);
+    }
+    const matchPill = document.createElement('span');
+    matchPill.className = 'match-pill';
+    matchPill.textContent = `${coverageValue}% match`;
+    titleRow.appendChild(matchPill);
+  }
+
+  headerRow.appendChild(titleRow);
+
+  // Add action buttons to header
+  const actionButtons = document.createElement('div');
+  actionButtons.className = 'card-actions';
+  actionButtons.style.display = 'flex';
+  actionButtons.style.gap = '8px';
+  actionButtons.style.alignItems = 'center';
+
+  // Add "Mark as Applied" button first (on the left)
+  const statusId = snapshot.status_id;
+  if (statusId) {
+    const appliedBtn = document.createElement('button');
+    appliedBtn.className = 'applied-icon';
+    appliedBtn.title = 'Mark as applied';
+    appliedBtn.setAttribute('aria-label', 'Mark as applied');
+    appliedBtn.innerHTML = `
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M20 6L9 17l-5-5" />
+      </svg>
+    `;
+    appliedBtn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      await markAsApplied(statusId);
+    });
+    actionButtons.appendChild(appliedBtn);
+  }
+
+  // Add job link button if job URL is available
+  const jobUrl = snapshot.job_url;
+  if (jobUrl) {
+    const jobLinkBtn = document.createElement('button');
+    jobLinkBtn.className = 'resume-icon';
+    jobLinkBtn.title = 'Open job description';
+    jobLinkBtn.setAttribute('aria-label', 'Open job description');
+    jobLinkBtn.innerHTML = `
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+        <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
+      </svg>
+    `;
+    jobLinkBtn.addEventListener('click', () => {
+      chrome.tabs.create({ url: jobUrl });
+    });
+    actionButtons.appendChild(jobLinkBtn);
+  }
+
+  // Add resume buttons if available (on the right)
+  if (resumeUrl && showResumeButton) {
+    // View button - opens in new tab
+    const viewBtn = document.createElement('button');
+    viewBtn.className = 'resume-icon';
+    viewBtn.title = 'Open generated resume';
+    viewBtn.setAttribute('aria-label', 'Open generated resume');
+    viewBtn.innerHTML = `
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+        <path d="M14 2v6h6" />
+        <path d="M16 13H8" />
+        <path d="M16 17H8" />
+        <path d="M10 9H8" />
+      </svg>
+    `;
+    viewBtn.addEventListener('click', () => {
+      chrome.tabs.create({ url: resumeUrl });
+    });
+    actionButtons.appendChild(viewBtn);
+
+    // Download button
+    const downloadBtn = document.createElement('button');
+    downloadBtn.className = 'resume-icon';
+    downloadBtn.title = 'Download resume';
+    downloadBtn.setAttribute('aria-label', 'Download resume');
+    downloadBtn.innerHTML = `
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+        <polyline points="7 10 12 15 17 10" />
+        <line x1="12" y1="15" x2="12" y2="3" />
+      </svg>
+    `;
+    downloadBtn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      await downloadResume(statusId, resumeUrl);
+    });
+    actionButtons.appendChild(downloadBtn);
+  }
+
+  if (actionButtons.children.length > 0) {
+    headerRow.appendChild(actionButtons);
+  }
+
+  card.appendChild(headerRow);
 
   if (subheading) {
     const subtitleEl = document.createElement('small');
     subtitleEl.textContent = subheading;
     card.appendChild(subtitleEl);
   }
-
-  const resumeUrl = snapshot.resume_url || (snapshot.metadata && snapshot.metadata.resume_url);
-  const isCompletedStatus = snapshot.status === 'completed' || snapshot.status === 'success';
 
   const shouldShowStage = !(isCompletedStatus && resumeUrl);
   if (shouldShowStage) {
@@ -440,7 +544,8 @@ function buildProgressCard(snapshot, options = {}) {
     card.appendChild(stagePill);
   }
 
-  if (snapshot.message) {
+  // Only show message if there's no resume URL (to avoid "resume generated successfully" when link is available)
+  if (snapshot.message && !resumeUrl) {
     const messageEl = document.createElement('div');
     messageEl.style.fontSize = '13px';
     messageEl.style.marginBottom = '8px';
@@ -455,65 +560,20 @@ function buildProgressCard(snapshot, options = {}) {
     card.appendChild(messageEl);
   }
 
-  const metadata = snapshot.metadata || {};
-  if (metadata.validation_result && typeof metadata.validation_result.keyword_coverage_score === 'number') {
-    let coverageValue = metadata.validation_result.keyword_coverage_score;
-    if (coverageValue <= 1) {
-      coverageValue = Math.round(coverageValue * 100);
-    } else {
-      coverageValue = Math.round(coverageValue);
-    }
-    const coverageEl = document.createElement('div');
-    coverageEl.style.fontSize = '13px';
-    coverageEl.style.marginBottom = '8px';
-    coverageEl.textContent = `Keyword coverage: ${coverageValue}%`;
-    card.appendChild(coverageEl);
-  }
-
+  // Footer with last updated time (positioned at bottom left)
   const footer = document.createElement('div');
   footer.className = 'card-footer';
 
   const updatedAt = snapshot.updated_at ? new Date(snapshot.updated_at * 1000) : null;
-  const updatedText = updatedAt ? `Updated ${formatRelativeTime(updatedAt)}` : 'In progress';
+  const updatedText = updatedAt ? `${formatRelativeTime(updatedAt)}` : 'In progress';
 
-  if (resumeUrl && showResumeButton) {
-    const actionGroup = document.createElement('div');
-    actionGroup.className = 'resume-action';
-
-    const resumeBtn = document.createElement('button');
-    resumeBtn.className = 'resume-icon';
-    resumeBtn.title = 'Open generated resume';
-    resumeBtn.setAttribute('aria-label', 'Open generated resume');
-    resumeBtn.innerHTML = `
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M9 15l6-6" />
-        <path d="M9 9h6v6" />
-      </svg>
-    `;
-    resumeBtn.addEventListener('click', () => {
-      chrome.tabs.create({ url: resumeUrl });
-    });
-
-    const timeEl = document.createElement('span');
-    timeEl.textContent = updatedText;
-
-    actionGroup.appendChild(resumeBtn);
-    actionGroup.appendChild(timeEl);
-    footer.appendChild(actionGroup);
-  } else {
-    const timeEl = document.createElement('span');
-    timeEl.textContent = updatedText;
-    footer.appendChild(timeEl);
-  }
+  const timeEl = document.createElement('span');
+  timeEl.textContent = updatedText;
+  footer.appendChild(timeEl);
 
   card.appendChild(footer);
 
   return card;
-}
-
-async function getRecentHistory() {
-  const data = await storageGet([RECENT_STATUS_KEY]);
-  return data[RECENT_STATUS_KEY] || [];
 }
 
 function clearActiveCard() {
@@ -558,7 +618,7 @@ function formatStatus(status) {
     completed: 'Completed',
     failed: 'Failed',
     processing: 'In Progress',
-    no_sponsorship: 'No Sponsorship',
+    no_sponsorship: 'Stopped',
     screening_blocked: 'Screening Blocked',
     not_started: 'Not Started',
   };
@@ -567,36 +627,44 @@ function formatStatus(status) {
 
 function formatRelativeTime(date) {
   if (!(date instanceof Date)) {
-    return 'recently';
+    return 'just now';
   }
 
-  const now = Date.now();
-  const diffMs = now - date.getTime();
+  const now = new Date();
+  const diffMs = now.getTime() - date.getTime();
 
-  if (Number.isNaN(diffMs)) {
-    return date.toLocaleString();
-  }
-
-  if (diffMs < 0) {
+  if (Number.isNaN(diffMs) || diffMs < 0) {
     return date.toLocaleString();
   }
 
   const diffSeconds = Math.floor(diffMs / 1000);
-  if (diffSeconds < 30) {
-    return 'just now';
+  if (diffSeconds < 45) {
+    return 'a few seconds ago';
   }
-  if (diffSeconds < 60) {
-    return 'less than a minute ago';
+  if (diffSeconds < 90) {
+    return '1 min ago';
   }
 
   const diffMinutes = Math.floor(diffSeconds / 60);
   if (diffMinutes < 60) {
-    return diffMinutes === 1 ? '1 minute ago' : `${diffMinutes} minutes ago`;
+    return diffMinutes === 1 ? '1 min ago' : `${diffMinutes} mins ago`;
   }
 
   const diffHours = Math.floor(diffMinutes / 60);
-  if (diffHours < 24) {
+  if (diffHours < 6) {
     return diffHours === 1 ? '1 hour ago' : `${diffHours} hours ago`;
+  }
+
+  const sameDay = now.toDateString() === date.toDateString();
+  if (sameDay) {
+    return `${formatClockTime(date)} today`;
+  }
+
+  const yesterday = new Date(now);
+  yesterday.setDate(now.getDate() - 1);
+
+  if (yesterday.toDateString() === date.toDateString()) {
+    return `yesterday ${formatClockTime(date)}`;
   }
 
   const diffDays = Math.floor(diffHours / 24);
@@ -604,12 +672,20 @@ function formatRelativeTime(date) {
     return diffDays === 1 ? '1 day ago' : `${diffDays} days ago`;
   }
 
-  const diffWeeks = Math.floor(diffDays / 7);
-  if (diffWeeks < 5) {
-    return diffWeeks === 1 ? '1 week ago' : `${diffWeeks} weeks ago`;
-  }
+  return date.toLocaleDateString(undefined, {
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+  });
+}
 
-  return date.toLocaleDateString();
+function formatClockTime(date) {
+  const hours = date.getHours();
+  const minutes = date.getMinutes();
+  const period = hours >= 12 ? 'pm' : 'am';
+  const displayHour = hours % 12 === 0 ? 12 : hours % 12;
+  const displayMinutes = minutes < 10 ? `0${minutes}` : minutes;
+  return `${displayHour}:${displayMinutes} ${period}`;
 }
 
 function isTerminal(status) {
@@ -636,18 +712,6 @@ function normalizeUrl(rawUrl = '') {
   }
 }
 
-function extractHostname(url = '') {
-  if (!url) {
-    return 'this site';
-  }
-  try {
-    const host = new URL(url).host || '';
-    return host.replace(/^www\./, '') || url;
-  } catch (_error) {
-    return url;
-  }
-}
-
 async function getActiveTab() {
   const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
   return tabs[0] || null;
@@ -661,149 +725,6 @@ async function getSelectionFromTab(tabId) {
   return result;
 }
 
-async function getStoredStatusEntry(tabId, jobUrl, baseUrl) {
-  const data = await storageGet([TAB_STATUS_KEY, JOB_STATUS_KEY, BASE_STATUS_KEY]);
-  const tabMap = data[TAB_STATUS_KEY] || {};
-  const jobMap = data[JOB_STATUS_KEY] || {};
-  const baseMap = data[BASE_STATUS_KEY] || {};
-
-  if (tabId !== null && tabId !== undefined) {
-    const tabEntry = tabMap[`tab-${tabId}`];
-    if (tabEntry) {
-      return tabEntry;
-    }
-  }
-
-  if (jobUrl && jobMap[jobUrl]) {
-    return { jobUrl, baseUrl, ...jobMap[jobUrl] };
-  }
-
-  if (baseUrl && baseMap[baseUrl]) {
-    return { jobUrl, baseUrl, ...baseMap[baseUrl] };
-  }
-
-  return null;
-}
-
-async function updateStoredStatusMaps(tabId, snapshot) {
-  if (!snapshot || !snapshot.status_id) {
-    return;
-  }
-
-  const normalizedJob = snapshot.job_url || (snapshot.jobUrl ?? '');
-  const normalizedBase = snapshot.base_url || (normalizedJob ? normalizeUrl(normalizedJob).baseUrl : (snapshot.baseUrl ?? ''));
-  const data = await storageGet([TAB_STATUS_KEY, JOB_STATUS_KEY, BASE_STATUS_KEY, RECENT_STATUS_KEY]);
-  const tabMap = { ...(data[TAB_STATUS_KEY] || {}) };
-  const jobMap = { ...(data[JOB_STATUS_KEY] || {}) };
-  const baseMap = { ...(data[BASE_STATUS_KEY] || {}) };
-  const history = Array.isArray(data[RECENT_STATUS_KEY]) ? [...data[RECENT_STATUS_KEY]] : [];
-
-  const existingEntries = [];
-  if (tabId !== null && tabId !== undefined) {
-    existingEntries.push(tabMap[`tab-${tabId}`]);
-  }
-  if (normalizedJob) {
-    existingEntries.push(jobMap[normalizedJob]);
-  }
-  if (normalizedBase) {
-    existingEntries.push(baseMap[normalizedBase]);
-  }
-  const existingSnippet = existingEntries.find((item) => item && item.selectionSnippet)?.selectionSnippet;
-  const selectionSnippet = snapshot.selection_snippet || existingSnippet || '';
-  if (!snapshot.selection_snippet && selectionSnippet) {
-    snapshot.selection_snippet = selectionSnippet;
-  }
-  const jobHash =
-    snapshot.metadata?.job_hash ||
-    snapshot.metadata?.job_metadata?.job_hash ||
-    snapshot.job_hash ||
-    existingEntries.find((item) => item && item.jobHash)?.jobHash ||
-    '';
-
-  const entry = {
-    statusId: snapshot.status_id,
-    jobUrl: normalizedJob,
-    baseUrl: normalizedBase,
-    updatedAt: snapshot.updated_at ? snapshot.updated_at * 1000 : Date.now(),
-    selectionSnippet,
-    jobHash,
-  };
-
-  if (tabId !== null && tabId !== undefined) {
-    tabMap[`tab-${tabId}`] = entry;
-  }
-
-  if (entry.jobUrl) {
-    jobMap[entry.jobUrl] = entry;
-  }
-
-  if (entry.baseUrl) {
-    baseMap[entry.baseUrl] = entry;
-  }
-
-  const historyEntry = buildHistoryEntry(snapshot, entry);
-  const filteredHistory = history.filter((item) => item.statusId !== historyEntry.statusId);
-  filteredHistory.unshift(historyEntry);
-  const trimmedHistory = filteredHistory.slice(0, MAX_HISTORY_ENTRIES);
-
-  await storageSet({
-    [TAB_STATUS_KEY]: tabMap,
-    [JOB_STATUS_KEY]: jobMap,
-    [BASE_STATUS_KEY]: baseMap,
-    [RECENT_STATUS_KEY]: trimmedHistory,
-  });
-}
-
-function buildHistoryEntry(snapshot, entry) {
-  const metadata = snapshot.metadata || {};
-  const jobMeta = metadata.job_metadata || {};
-  const selectionSnippet = snapshot.selection_snippet || entry.selectionSnippet || metadata.selection_snippet || jobMeta.selection_snippet || '';
-
-  const historyMetadata = {
-    ...metadata,
-    selection_snippet: selectionSnippet,
-    job_metadata: {
-      ...jobMeta,
-      selection_snippet: selectionSnippet,
-    },
-  };
-
-  return {
-    statusId: entry.statusId,
-    jobUrl: entry.jobUrl,
-    baseUrl: entry.baseUrl,
-    status: snapshot.status || 'processing',
-    step: snapshot.step || '',
-    message: snapshot.message || '',
-    resumeUrl: snapshot.resume_url || '',
-    updatedAt: entry.updatedAt,
-    jobTitle: jobMeta.title || metadata.title || '',
-    company: jobMeta.company || metadata.company || '',
-    metadata: historyMetadata,
-    selectionSnippet,
-  };
-}
-
-function convertHistoryEntryToSnapshot(entry) {
-  return {
-    status: entry.status,
-    step: entry.step,
-    message: entry.message,
-    resume_url: entry.resumeUrl,
-    metadata: entry.metadata || {
-      job_metadata: {
-        title: entry.jobTitle,
-        company: entry.company,
-      }
-    },
-    updated_at: Math.floor((entry.updatedAt || Date.now()) / 1000),
-    status_id: entry.statusId,
-    job_url: entry.jobUrl,
-    base_url: entry.baseUrl,
-    selection_snippet: entry.selectionSnippet || '',
-  };
-}
-
 function extractJobInfo(snapshot) {
   const metadata = snapshot.metadata || {};
   const jobMeta = metadata.job_metadata || metadata || {};
@@ -811,37 +732,6 @@ function extractJobInfo(snapshot) {
     title: jobMeta.title || '',
     company: jobMeta.company || '',
     selectionSnippet: metadata.selection_snippet || jobMeta.selection_snippet || '',
-  };
-}
-
-function buildContextFromEntry(entry, fallbackNormalized) {
-  if (entry) {
-    return {
-      statusId: entry.statusId || null,
-      jobUrl: entry.jobUrl || fallbackNormalized.jobUrl,
-      baseUrl: entry.baseUrl || fallbackNormalized.baseUrl,
-    };
-  }
-
-  return {
-    statusId: null,
-    jobUrl: fallbackNormalized.jobUrl,
-    baseUrl: fallbackNormalized.baseUrl,
-  };
-}
-
-function buildContextFromSnapshot(snapshot) {
-  if (!snapshot) {
-    return {
-      statusId: null,
-      jobUrl: '',
-      baseUrl: '',
-    };
-  }
-  return {
-    statusId: snapshot.status_id || null,
-    jobUrl: snapshot.job_url || '',
-    baseUrl: snapshot.base_url || '',
   };
 }
 
@@ -889,6 +779,150 @@ function updateSelectedSnippet(text) {
   }
 }
 
+async function markAsApplied(statusId) {
+  try {
+    const response = await fetch(MARK_APPLIED_ENDPOINT(statusId), {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ applied: true }),
+    });
+
+    if (!response.ok) {
+      const result = await response.json();
+      throw new Error(result?.error || `Failed to mark as applied (${response.status})`);
+    }
+
+    // Refresh the status to hide the applied job
+    await refreshStatus();
+    
+    // Refresh applied section if it's expanded
+    if (appliedToggle.classList.contains('expanded')) {
+      await loadAppliedResumes();
+    }
+  } catch (error) {
+    console.error('Failed to mark as applied:', error);
+    setStatusMessage(`Failed to mark as applied: ${escapeHtml(error.message)}`, 'error');
+  }
+}
+
+async function toggleAppliedSection() {
+  const isExpanded = appliedToggle.classList.contains('expanded');
+  
+  if (isExpanded) {
+    // Collapse
+    appliedToggle.classList.remove('expanded');
+    appliedContainer.style.display = 'none';
+  } else {
+    // Expand
+    appliedToggle.classList.add('expanded');
+    appliedContainer.style.display = 'block';
+    
+    // Load applied resumes if container is empty
+    if (appliedContainer.children.length === 0) {
+      await loadAppliedResumes();
+    }
+  }
+}
+
+async function loadAppliedResumes() {
+  try {
+    const snapshots = await fetchAllSnapshots(true); // Include applied jobs
+    const appliedSnapshots = snapshots.filter((snap) => {
+      const metadata = snap.metadata || {};
+      return metadata.applied === true;
+    });
+
+    appliedContainer.innerHTML = '';
+
+    if (appliedSnapshots.length === 0) {
+      const emptyState = document.createElement('div');
+      emptyState.className = 'empty-state';
+      emptyState.textContent = 'No applied resumes yet';
+      appliedContainer.appendChild(emptyState);
+      return;
+    }
+
+    appliedSnapshots.forEach((snapshot) => {
+      const jobInfo = extractJobInfo(snapshot);
+      const card = buildProgressCard(snapshot, {
+        heading: jobInfo.title || snapshot.job_url || 'Resume',
+        subheading: jobInfo.company || '',
+        showResumeButton: Boolean(snapshot.resume_url),
+      });
+      appliedContainer.appendChild(card);
+    });
+  } catch (error) {
+    console.error('Failed to load applied resumes:', error);
+    appliedContainer.innerHTML = `
+      <div class="empty-state">
+        Failed to load applied resumes: ${escapeHtml(error.message)}
+      </div>
+    `;
+  }
+}
+
+async function downloadResume(statusId, resumeUrl) {
+  try {
+    const params = new URLSearchParams();
+    if (statusId) {
+      params.set('status_id', statusId);
+    } else if (resumeUrl) {
+      params.set('resume_url', resumeUrl);
+    } else {
+      throw new Error('No status_id or resume_url provided');
+    }
+
+    const url = `${DOWNLOAD_RESUME_ENDPOINT}?${params.toString()}`;
+    const response = await fetch(url);
+
+    if (!response.ok) {
+      const result = await response.json();
+      throw new Error(result?.error || `Download failed (${response.status})`);
+    }
+
+    // Get filename from Content-Disposition header or use default
+    const contentDisposition = response.headers.get('Content-Disposition');
+    let filename = 'resume.docx';
+    if (contentDisposition) {
+      // Try to extract filename from Content-Disposition header
+      // Format: attachment; filename="filename.docx" or attachment; filename*=UTF-8''filename.docx
+      const filenameMatch = contentDisposition.match(/filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/);
+      if (filenameMatch && filenameMatch[1]) {
+        filename = filenameMatch[1].replace(/['"]/g, '').trim();
+      }
+      // If filename starts with UTF-8'' (RFC 5987 encoding), extract the actual filename
+      if (filename.startsWith("UTF-8''")) {
+        filename = decodeURIComponent(filename.replace(/^UTF-8''/, ''));
+      }
+    }
+    
+    // Fallback: use default if filename is still empty or invalid
+    if (!filename || filename === 'download') {
+      filename = 'resume.docx';
+    }
+
+    // Download the file as blob
+    const blob = await response.blob();
+    const blobUrl = window.URL.createObjectURL(blob);
+    
+    // Create temporary anchor element to trigger download
+    const a = document.createElement('a');
+    a.href = blobUrl;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    
+    // Clean up blob URL
+    window.URL.revokeObjectURL(blobUrl);
+  } catch (error) {
+    console.error('Failed to download resume:', error);
+    setStatusMessage(`Failed to download resume: ${escapeHtml(error.message)}`, 'error');
+  }
+}
+
 function escapeHtml(input) {
   return String(input)
     .replace(/&/g, '&amp;')
@@ -896,16 +930,4 @@ function escapeHtml(input) {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
-}
-
-function storageGet(keys) {
-  return new Promise((resolve) => {
-    chrome.storage.local.get(keys, (result) => resolve(result || {}));
-  });
-}
-
-function storageSet(items) {
-  return new Promise((resolve) => {
-    chrome.storage.local.set(items, () => resolve());
-  });
 }

@@ -5,10 +5,12 @@ LangGraph-based automation that turns a highlighted job description into a tailo
 ## Feature Highlights
 
 - **Multi-stage LangGraph flow**: Initial screening → pointer ingestion → JD analysis → resume rewrite → document generation → LLM validation with retries
-- **Sponsorship guard rails**: Lightweight screening service flags “no visa sponsorship” jobs before expensive calls
+- **Sponsorship guard rails**: Lightweight screening service flags "no visa sponsorship" jobs before expensive calls
 - **Google Drive integration**: Pointer markdown pulled from Drive, final `.docx` uploaded back with shareable links
 - **Structured LLM services**: Single OpenAI client handles analysis, rewriting, and validation with pydantic-validated outputs
-- **Realtime status service**: `/status` endpoint plus Chrome extension UI retain progress per job URL/status id
+- **Persistent status tracking**: SQLite-backed status service tracks all resume generations with URL normalization and job hashing
+- **Chrome extension UI**: Highlight job descriptions to generate resumes, track active jobs, view history, and manage applied positions
+- **Applied jobs management**: Mark positions as applied and filter them in a separate collapsible section in the extension
 - **Observability via MLflow**: Every workflow run is logged under the `resume-generation` experiment (see `mlruns/`)
 
 ## System Architecture
@@ -46,7 +48,7 @@ See `Agent_architecture.md` for a deeper dive into each node.
 ### Option A – Conda (recommended)
 
 ```bash
-conda env create -f /Users/shayan/Documents/Job_Assistant/environment.yml
+conda env create -f environment.yml
 conda activate resume-agent
 ```
 
@@ -55,13 +57,13 @@ conda activate resume-agent
 ```bash
 python -m venv .venv
 source .venv/bin/activate  # Windows: .venv\Scripts\activate
-pip install -r /Users/shayan/Documents/Job_Assistant/requirements.txt
+pip install -r requirements.txt
 pip install mlflow  # required for server telemetry
 ```
 
 ### Environment variables
 
-Create `/Users/shayan/Documents/Job_Assistant/.env` and populate:
+Create `.env` in the project root and populate:
 
 ```
 OPENAI_API_KEY=sk-your-key
@@ -70,11 +72,11 @@ SCREENING_MODEL=gpt-5-mini            # optional override
 GOOGLE_DRIVE_POINTERS_FOLDER_ID=xxx
 GOOGLE_DRIVE_OUTPUT_FOLDER_ID=yyy
 RESUME_TEMPLATE_DRIVE_ID=zzz
-FLASK_PORT=8000                       # match the Chrome extension default
+FLASK_PORT=8002                       # default is 8002; Chrome extension defaults to 8000
 LOG_LEVEL=INFO
 VALIDATION_RETRIES=2
 LLM_TEMPERATURE=0.0
-DATABASE_URL=sqlite:////Users/shayan/Documents/Job_Assistant/data/status_snapshots.db
+DATABASE_URL=sqlite:///data/status_snapshots.db
 ```
 
 Place your Google OAuth `credentials.json` in the repository root; the first run will create `token.json`.
@@ -91,18 +93,24 @@ Place your Google OAuth `credentials.json` in the repository root; the first run
 First initialize the status database (creates the SQLite file defined by `DATABASE_URL`):
 
 ```bash
-make -C /Users/shayan/Documents/Job_Assistant migrate-db
+make migrate-db
 ```
 
 ```bash
-python /Users/shayan/Documents/Job_Assistant/run.py
+python run.py
 ```
 
-Key endpoints (replace `8000` with your configured `FLASK_PORT`, default is `8002` in code):
+The server defaults to port `8002` (configurable via `FLASK_PORT`). **Note**: The Chrome extension defaults to `http://localhost:8000`, so either:
+- Set `FLASK_PORT=8000` in your `.env` file, or
+- Update `SERVER_BASE_URL` in `chrome-extension/popup.js` to match your port
+
+Key endpoints:
 
 - `GET /health` – service heartbeat
 - `POST /generate-resume` – main workflow (requires `job_description` + `job_metadata.job_url`)
-- `GET /status` – latest snapshot by `status_id`, `job_url`, or `base_url`
+- `GET /status` – latest snapshot by `status_id`, `job_url`, or `base_url` query parameter
+- `GET /statuses` – list all tracked statuses (supports `include_applied` query parameter, default `true`)
+- `POST /statuses/<status_id>/applied` – mark a status as applied or not applied (body: `{"applied": true/false}`)
 - `GET /test-drive` – verifies Drive connectivity/listing
 - `POST /test-llm` – smoke test for OpenAI access
 
@@ -110,7 +118,7 @@ The server prints a configuration summary on startup and will warn if critical I
 
 ### Workflow status persistence
 
-Statuses now persist to SQLite via `StatusService` + `StatusRepository`. By default the database lives at `data/status_snapshots.db` (override with `DATABASE_URL`). Records expire after one hour based on `updated_at`, and in-memory caches mirror the DB for fast lookups. Run `make migrate-db` whenever new tables or columns are introduced.
+Statuses now persist exclusively to SQLite via `StatusService` + `StatusRepository`. By default the database lives at `data/status_snapshots.db` (override with `DATABASE_URL`). The service reads and writes directly to the database—there is no TTL or in-memory cache—so runs survive server restarts. Run `make migrate-db` whenever new tables or columns are introduced.
 
 ## 5. Observability
 
@@ -118,22 +126,34 @@ Statuses now persist to SQLite via `StatusService` + `StatusRepository`. By defa
 - Launch a local UI with the provided Makefile target:
 
 ```bash
-make -C /Users/shayan/Documents/Job_Assistant mlflow
+make mlflow
 ```
 
 ## 6. Chrome Extension
 
-Path: `/Users/shayan/Documents/Job_Assistant/chrome-extension`
+Path: `chrome-extension/`
 
-1. Update `SERVER_BASE_URL` in `popup.js` if your backend is not on `http://localhost:8000`.
-2. Load the directory as an unpacked extension in Chrome.
-3. Highlight a job description, click “Create Resume,” and the popup will poll `/status` until a terminal state is reached.
-4. History for the last five runs is cached per job/base URL to survive popup closes.
+1. Update `SERVER_BASE_URL` in `popup.js` if your backend is not on `http://localhost:8000` (default backend port is `8002`, so you'll likely need to change this).
+2. Load the directory as an unpacked extension in Chrome:
+   - Open Chrome and navigate to `chrome://extensions/`
+   - Enable "Developer mode" (toggle in top right)
+   - Click "Load unpacked" and select the `chrome-extension` directory
+3. **Usage**:
+   - Navigate to a job posting page
+   - Highlight/select the job description text
+   - Click the extension icon and then "Create Resume"
+   - The popup will show progress and poll `/status` until completion
+   - View active jobs and history in the extension UI
+4. **Applied Jobs**: 
+   - Click the "Applied" toggle to expand/collapse a section showing all positions you've marked as applied
+   - Use the applied icon (✓) on any completed resume card to mark it as applied
+   - Applied jobs are filtered from the main history but can be viewed in the applied section
+5. The extension fetches `/status` and `/statuses` fresh every time (no Chrome storage caching), so the SQLite database is the single source of truth.
 
 ## 7. Tests & Tooling
 
-- Unit tests: `pytest /Users/shayan/Documents/Job_Assistant/tests`
-- Example ad-hoc script for sponsorship handling: `python /Users/shayan/Documents/Job_Assistant/test_sponsorship.py` (update the URL/port to match your server)
+- Unit tests: `pytest tests/`
+- Example ad-hoc script for sponsorship handling: `python test_sponsorship.py` (update the URL/port to match your server)
 - Code style: `black src/ tests/`
 
 ## 8. Project Structure
@@ -158,7 +178,7 @@ Job_Assistant/
 │       ├── llm_service.py       # Shared OpenAI client (analysis, rewrite, validation)
 │       ├── screening_service.py # Sponsorship / blocker detection
 │       ├── status_repository.py # SQLite persistence for workflow statuses
-│       └── status_service.py    # Status cache + API surface
+│       └── status_service.py    # Thin wrapper over the SQLite repository
 ├── scripts/
 │   └── migrate_status_db.py  # Creates the status SQLite tables
 ├── chrome-extension/           # Browser UI to trigger and monitor runs
@@ -177,7 +197,8 @@ Job_Assistant/
 - **Drive pointer folder empty**: confirm the folder ID and that the OAuth account has read access; `DriveService.list_pointer_documents` logs everything it finds.
 - **Sponsorship rejection**: when the screening node detects “no sponsorship,” `/generate-resume` returns a 400 with status `no_sponsorship`.
 - **Template placeholder mismatches**: add placeholders matching the role keys returned by the resume writer (`LEAFICIENT_EXPERIENCE_BULLET_1`, etc.) or they will be cleared.
-- **Port mismatch with Chrome extension**: either set `FLASK_PORT=8000` in `.env` before starting the server or edit `chrome-extension/popup.js`.
+- **Port mismatch with Chrome extension**: The backend defaults to port `8002`, but the extension defaults to `8000`. Either set `FLASK_PORT=8000` in `.env` before starting the server, or update `SERVER_BASE_URL` in `chrome-extension/popup.js` to `http://localhost:8002`.
+- **Applied jobs not showing**: Make sure you're expanding the "Applied" section in the Chrome extension popup. Applied jobs are hidden from the main history by default but appear in the collapsible applied section.
 
 ## License
 

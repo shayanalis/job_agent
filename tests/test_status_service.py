@@ -65,26 +65,6 @@ def test_create_update_and_lookup_status_by_id_and_url(sqlite_status_service):
 def test_get_status_by_base_url(sqlite_status_service):
     service = sqlite_status_service
 
-
-def test_repository_lookup_used_when_cache_empty(sqlite_status_service):
-    service = sqlite_status_service
-
-    snapshot = service.create_status(
-        "https://example.com/jobs/cache",
-        status="processing",
-        step="received",
-    )
-
-    # Clear in-memory cache to force repository path.
-    service._store.clear()
-    service._job_index.clear()
-    service._hash_index.clear()
-    service._order.clear()
-
-    fetched = service.get_status(status_id=snapshot.status_id)
-    assert fetched is not None
-    assert fetched.status_id == snapshot.status_id
-
     snapshot = service.create_status(
         "https://careers.example.com/jobs/456",
         status="processing",

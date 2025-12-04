@@ -12,7 +12,7 @@ def status_client(tmp_path):
     db_url = f"sqlite:///{tmp_path/'status_endpoint.db'}"
     repo = StatusRepository(database_url=db_url)
     repo.create_schema()
-    test_service = StatusService(ttl_seconds=60, repository=repo)
+    test_service = StatusService(repository=repo)
     server.status_service = test_service
 
     try:

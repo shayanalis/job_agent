@@ -4,8 +4,9 @@ import hashlib
 import logging
 import time
 import mlflow
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, send_file
 from flask_cors import CORS
+import io
 
 from src.graph.workflow import create_workflow
 from config.settings import FLASK_PORT, FLASK_DEBUG, LOG_LEVEL
@@ -195,7 +196,7 @@ def generate_resume():
         
         # Check for no sponsorship
         if result.get("status") == "no_sponsorship":
-            error_msg = result.get("error_message", "This position does not offer H1B visa sponsorship")
+            error_msg = "cancelled: no visa sponsorship"
             job_metadata = result.get("job_metadata", {})
             logger.warning(f"Workflow ended: No H1B sponsorship for {job_metadata.get('title')} at {job_metadata.get('company')}")
             status_service.update_status(
@@ -355,6 +356,84 @@ def set_status_applied(status_id: str):
     }), 200
 
 
+@app.route('/download-resume', methods=['GET'])
+def download_resume():
+    """Download a resume file from Google Drive.
+
+    Query parameters:
+        status_id: Status ID to get resume URL from (preferred)
+        resume_url: Direct Google Drive URL (alternative)
+
+    Returns:
+        File download response
+
+    Raises:
+        400: If neither status_id nor resume_url provided
+        404: If status_id not found or resume URL missing
+        500: If download fails
+    """
+    try:
+        from src.services.drive_service import DriveService
+
+        status_id = request.args.get('status_id')
+        resume_url = request.args.get('resume_url')
+
+        # Get resume URL from status_id if provided
+        if status_id:
+            snapshot = status_service.get_status(status_id=status_id)
+            if not snapshot:
+                return jsonify({
+                    "status": "failed",
+                    "error": "status_id not found"
+                }), 404
+            
+            resume_url = snapshot.resume_url or (snapshot.metadata and snapshot.metadata.get('resume_url'))
+            if not resume_url:
+                return jsonify({
+                    "status": "failed",
+                    "error": "No resume URL found for this status_id"
+                }), 404
+
+        if not resume_url:
+            return jsonify({
+                "status": "failed",
+                "error": "Either status_id or resume_url query parameter is required"
+            }), 400
+
+        # Extract file ID from URL
+        drive_service = DriveService()
+        file_id = drive_service.extract_file_id_from_url(resume_url)
+        
+        if not file_id:
+            return jsonify({
+                "status": "failed",
+                "error": f"Could not extract file ID from URL: {resume_url}"
+            }), 400
+
+        # Download file as PDF
+        content, mime_type, file_name = drive_service.download_file_binary_content(file_id, export_as_pdf=True)
+
+        # Create BytesIO object for Flask send_file
+        file_stream = io.BytesIO(content)
+        file_stream.seek(0)
+
+        logger.info(f"Downloading resume: {file_name} ({len(content)} bytes)")
+
+        return send_file(
+            file_stream,
+            mimetype=mime_type,
+            as_attachment=True,
+            download_name=file_name
+        ), 200
+
+    except Exception as error:
+        logger.error(f"Error downloading resume: {error}", exc_info=True)
+        return jsonify({
+            "status": "failed",
+            "error": str(error)
+        }), 500
+
+
 @app.route('/test-drive', methods=['GET'])
 def test_drive():
     """Test Google Drive connection.
@@ -462,6 +541,14 @@ def run_server():
     
     if not OPENAI_API_KEY:
         logger.warning("OpenAI API key is not configured! Metadata extraction may fail.")
+    
+    # Log registered routes for debugging
+    logger.info("=" * 60)
+    logger.info("Registered Routes:")
+    for rule in app.url_map.iter_rules():
+        methods = ','.join(sorted(rule.methods - {'HEAD', 'OPTIONS'}))
+        logger.info(f"  {rule.rule:50s} [{methods}]")
+    logger.info("=" * 60)
     
     logger.info(f"Starting Flask server on port {FLASK_PORT}")
     app.run(

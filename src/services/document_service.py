@@ -1,10 +1,9 @@
 """Document generation service for Word templates."""
 
 import logging
-import os
 import re
 from pathlib import Path
-from typing import List, Dict, Optional, Any
+from typing import Dict, Optional, Any
 from datetime import datetime
 
 from docx import Document
@@ -12,6 +11,8 @@ from docx.shared import Pt
 
 from config.settings import RESUME_TEMPLATE_DRIVE_ID
 from .drive_service import DriveService
+
+PLACEHOLDER_PATTERN = re.compile(r'\{\{[^}]+\}\}')
 
 logger = logging.getLogger(__name__)
 
@@ -142,10 +143,67 @@ class DocumentService:
         if placeholder not in paragraph.text:
             return
 
-        # Simple approach: replace in each run that contains the placeholder
+        while placeholder in paragraph.text:
+            start_index = paragraph.text.index(placeholder)
+            end_index = start_index + len(placeholder)
+
+            current_pos = 0
+            start_run_idx = None
+            start_offset = None
+            end_run_idx = None
+            end_offset = None
+
+            for idx, run in enumerate(paragraph.runs):
+                run_text = run.text
+                run_len = len(run_text)
+
+                if start_run_idx is None and current_pos + run_len > start_index:
+                    start_run_idx = idx
+                    start_offset = start_index - current_pos
+
+                if end_run_idx is None and current_pos + run_len >= end_index:
+                    end_run_idx = idx
+                    end_offset = end_index - current_pos
+                    break
+
+                current_pos += run_len
+
+            if start_run_idx is None or end_run_idx is None:
+                logger.warning("Placeholder boundaries could not be resolved in paragraph; aborting replacement")
+                return
+
+            start_run = paragraph.runs[start_run_idx]
+            end_run = paragraph.runs[end_run_idx]
+
+            prefix = start_run.text[:start_offset] if start_offset is not None else start_run.text
+            suffix = end_run.text[end_offset:] if end_offset is not None else ""
+
+            start_run.text = f"{prefix}{replacement_text}{suffix}"
+
+            for idx in range(start_run_idx + 1, end_run_idx + 1):
+                paragraph.runs[idx].text = ""
+    
+    def _remove_placeholders_from_paragraph(self, paragraph) -> None:
+        """Strip any unreplaced placeholders without disturbing paragraph style."""
         for run in paragraph.runs:
-            if placeholder in run.text:
-                run.text = run.text.replace(placeholder, replacement_text)
+            if PLACEHOLDER_PATTERN.search(run.text):
+                run.text = PLACEHOLDER_PATTERN.sub('', run.text)
+    
+    def _apply_bullet_style(self, paragraph) -> None:
+        """Apply a bullet style to the given paragraph if available in the template."""
+        try:
+            paragraph.style = 'List Bullet'
+            logger.info("Applied List Bullet style")
+        except KeyError:
+            try:
+                paragraph.style = 'ListBullet'
+                logger.info("Applied ListBullet style")
+            except KeyError:
+                logger.warning("Bullet style not found in template; falling back to inline bullet character")
+                if paragraph.runs:
+                    first_run = paragraph.runs[0]
+                    if first_run.text and not first_run.text.lstrip().startswith(("•", "-", "*")):
+                        first_run.text = f"• {first_run.text}"
 
     def _replace_placeholders(
         self,
@@ -217,39 +275,34 @@ class DocumentService:
             for key, value in replacements.items():
                 if key in paragraph.text:
                     logger.info(f"Found placeholder {key} in paragraph")
-                    # Replace text while preserving runs structure
                     self._replace_text_in_paragraph(paragraph, key, value)
 
-                    # Apply bullet list style if this is a bullet placeholder
-                    if key in bullet_placeholders and value:  # Only if not empty
-                        try:
-                            paragraph.style = 'List Bullet'
-                            logger.info(f"Applied List Bullet style to {key}")
-                        except KeyError:
-                            # If 'List Bullet' style doesn't exist, try alternative names
-                            try:
-                                paragraph.style = 'ListBullet'
-                            except KeyError:
-                                logger.warning(f"Could not apply bullet style to {key} - style not found in template")
+                    if key in bullet_placeholders and value:
+                        self._apply_bullet_style(paragraph)
 
-        # Remove any remaining placeholders
+        # Remove any remaining placeholders while preserving styles
         for paragraph in doc.paragraphs:
-            paragraph.text = re.sub(r'\{\{[^}]+\}\}', '', paragraph.text)
+            self._remove_placeholders_from_paragraph(paragraph)
 
-        # Replace in tables
+        # Replace in tables (cell paragraphs)
         for table in doc.tables:
             for row in table.rows:
                 for cell in row.cells:
-                    for key, value in replacements.items():
-                        if key in cell.text:
-                            logger.info(f"Found placeholder {key} in table cell")
-                            cell.text = cell.text.replace(key, value)
-                    
+                    for paragraph in cell.paragraphs:
+                        for key, value in replacements.items():
+                            if key in paragraph.text:
+                                logger.info(f"Found placeholder {key} in table cell")
+                                self._replace_text_in_paragraph(paragraph, key, value)
+
+                                if key in bullet_placeholders and value:
+                                    self._apply_bullet_style(paragraph)
+        
         # Remove any remaining placeholders from tables
         for table in doc.tables:
             for row in table.rows:
                 for cell in row.cells:
-                    cell.text = re.sub(r'\{\{[^}]+\}\}', '', cell.text)
+                    for paragraph in cell.paragraphs:
+                        self._remove_placeholders_from_paragraph(paragraph)
 
     def _generate_summary(self, job_metadata: Dict) -> str:
         """Generate professional summary based on job.

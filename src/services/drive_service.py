@@ -2,7 +2,8 @@
 
 import os
 import logging
-from typing import List, Dict, Optional
+import re
+from typing import List, Dict, Optional, Tuple
 from pathlib import Path
 
 from google.auth.transport.requests import Request
@@ -354,5 +355,137 @@ class DriveService:
 
         except HttpError as error:
             logger.error(f"Error getting file metadata: {error}")
+            raise
+
+    @staticmethod
+    def extract_file_id_from_url(url: str) -> Optional[str]:
+        """Extract Google Drive file ID from various URL formats.
+
+        Supports:
+        - https://drive.google.com/file/d/FILE_ID/view
+        - https://drive.google.com/open?id=FILE_ID
+        - https://drive.google.com/file/d/FILE_ID/
+        - https://docs.google.com/document/d/FILE_ID/edit
+        - FILE_ID (if already just the ID)
+
+        Args:
+            url: Google Drive URL or file ID
+
+        Returns:
+            File ID if found, None otherwise
+        """
+        if not url:
+            return None
+
+        # If it's already just an ID (no special characters except alphanumeric and hyphens)
+        if re.match(r'^[a-zA-Z0-9_-]+$', url):
+            return url
+
+        # Pattern 1: /file/d/FILE_ID or /document/d/FILE_ID
+        match = re.search(r'/file/d/([a-zA-Z0-9_-]+)', url)
+        if match:
+            return match.group(1)
+
+        match = re.search(r'/document/d/([a-zA-Z0-9_-]+)', url)
+        if match:
+            return match.group(1)
+
+        # Pattern 2: ?id=FILE_ID
+        match = re.search(r'[?&]id=([a-zA-Z0-9_-]+)', url)
+        if match:
+            return match.group(1)
+
+        logger.warning(f"Could not extract file ID from URL: {url}")
+        return None
+
+    def download_file_binary_content(self, file_id: str, export_as_pdf: bool = False) -> Tuple[bytes, str, str]:
+        """Download a binary file from Google Drive and return content in memory.
+
+        Args:
+            file_id: Google Drive file ID
+            export_as_pdf: If True, export Google Docs/Word files as PDF
+
+        Returns:
+            Tuple of (binary_content, mime_type, filename)
+
+        Raises:
+            HttpError: If API call fails
+        """
+        try:
+            # Get file metadata first to get name and MIME type
+            file_metadata = self.get_file_metadata(file_id)
+            mime_type = file_metadata.get('mimeType', 'application/octet-stream')
+            file_name = file_metadata.get('name', 'download')
+
+            # If PDF export is requested, export the file as PDF
+            if export_as_pdf:
+                google_docs_mime = 'application/vnd.google-apps.document'
+                office_mime_types = [
+                    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',  # .docx
+                    'application/msword',  # .doc
+                ]
+                
+                # If it's already a PDF, just download it
+                if mime_type == 'application/pdf':
+                    request = self.service.files().get_media(fileId=file_id)
+                    logger.info(f"File {file_id} is already PDF format")
+                # Google Docs can be exported directly as PDF
+                elif mime_type == google_docs_mime:
+                    request = self.service.files().export_media(
+                        fileId=file_id,
+                        mimeType='application/pdf'
+                    )
+                    mime_type = 'application/pdf'
+                    base_name = Path(file_name).stem
+                    file_name = f"{base_name}.pdf"
+                    logger.info(f"Exporting Google Doc {file_id} as PDF")
+                # For Office files, try to export as PDF
+                # Note: export_media only works for Google Docs format, not regular Office files
+                elif mime_type in office_mime_types:
+                    try:
+                        # Try exporting as PDF (may work if file was converted to Google Docs format)
+                        request = self.service.files().export_media(
+                            fileId=file_id,
+                            mimeType='application/pdf'
+                        )
+                        mime_type = 'application/pdf'
+                        base_name = Path(file_name).stem
+                        file_name = f"{base_name}.pdf"
+                        logger.info(f"Exporting Office file {file_id} as PDF via Google Drive")
+                    except HttpError as export_error:
+                        # export_media doesn't work for regular Office files - need local conversion
+                        error_msg = str(export_error)
+                        if 'exportNotSupported' in error_msg or '400' in error_msg:
+                            logger.error(
+                                f"Cannot export Office file {file_id} as PDF directly. "
+                                f"Regular .docx files stored in Google Drive cannot be exported as PDF via API. "
+                                f"File would need to be downloaded and converted locally."
+                            )
+                            raise ValueError(
+                                "Office files (.docx) stored in Google Drive cannot be exported as PDF directly. "
+                                "The file needs to be a Google Doc format or already in PDF format."
+                            )
+                        else:
+                            raise
+                else:
+                    logger.warning(f"File {file_id} (MIME type: {mime_type}) cannot be exported as PDF")
+                    request = self.service.files().get_media(fileId=file_id)
+            else:
+                # Download file content as-is
+                request = self.service.files().get_media(fileId=file_id)
+
+            file_handle = io.BytesIO()
+            downloader = MediaIoBaseDownload(file_handle, request)
+
+            done = False
+            while not done:
+                status, done = downloader.next_chunk()
+
+            content = file_handle.getvalue()
+            logger.info(f"Downloaded file {file_id} ({len(content)} bytes, MIME: {mime_type})")
+            return content, mime_type, file_name
+
+        except HttpError as error:
+            logger.error(f"Error downloading binary file {file_id}: {error}")
             raise
 
