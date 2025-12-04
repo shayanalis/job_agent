@@ -63,21 +63,29 @@ pip install mlflow  # required for server telemetry
 
 ### Environment variables
 
-Create `.env` in the project root and populate:
+Copy the example environment file and fill in your values:
 
+```bash
+cp env.example .env
 ```
-OPENAI_API_KEY=sk-your-key
-OPENAI_MODEL=gpt-5                    # optional override
-SCREENING_MODEL=gpt-5-mini            # optional override
-GOOGLE_DRIVE_POINTERS_FOLDER_ID=xxx
-GOOGLE_DRIVE_OUTPUT_FOLDER_ID=yyy
-RESUME_TEMPLATE_DRIVE_ID=zzz
-FLASK_PORT=8002                       # default is 8002; Chrome extension defaults to 8000
-LOG_LEVEL=INFO
-VALIDATION_RETRIES=2
-LLM_TEMPERATURE=0.0
-DATABASE_URL=sqlite:///data/status_snapshots.db
-```
+
+Then edit `.env` and populate the required variables. See `env.example` for detailed descriptions of each variable and setup instructions.
+
+**Required variables:**
+- `OPENAI_API_KEY` - Your OpenAI API key (get from https://platform.openai.com/api-keys)
+- `GOOGLE_DRIVE_POINTERS_FOLDER_ID` - Google Drive folder containing resume pointer documents
+- `GOOGLE_DRIVE_OUTPUT_FOLDER_ID` - Google Drive folder for generated resumes
+- `RESUME_TEMPLATE_DRIVE_ID` - Google Drive file ID for your Word resume template
+
+**Optional variables** (have sensible defaults):
+- `OPENAI_MODEL` - LLM model (default: `gpt-5`)
+- `SCREENING_MODEL` - Model for screening (default: `gpt-5-mini`)
+- `FLASK_PORT` - Server port (default: `8002`; Chrome extension defaults to `8000`)
+- `LLM_TEMPERATURE` - LLM temperature (default: `0.0`)
+- `VALIDATION_RETRIES` - Number of validation retries (default: `2`)
+- `LOG_LEVEL` - Logging level (default: `INFO`)
+- `FLASK_DEBUG` - Enable debug mode (default: `false`)
+- `DATABASE_URL` - Database connection string (default: `sqlite:///data/status_snapshots.db`)
 
 Place your Google OAuth `credentials.json` in the repository root; the first run will create `token.json`.
 
